@@ -1,9 +1,7 @@
-import Data.List.Extras.Argmax
-import Data.List
-import Control.Monad.Random
 
 module MultiArmedBandit where
-
+import Data.List
+import Control.Monad.IO.Class
 
 --------- This section is a utility for maintaining empirical mean and variance estimates without keeping all scores.
 -- |Sufficient information to calculate online mean and variance, see
@@ -12,7 +10,7 @@ data Stats = OnlineMeanAndVariance {
      mvN :: Integer,   -- number of samples so far
      mvX,          -- current mean
      mvM2 :: Float -- extra information for variance
-}
+} deriving Show
 
 -- |Stats for the empty sequence.
 emptyStats = OnlineMeanAndVariance {mvN = 0, mvX = 0, mvM2 = 0}
@@ -35,10 +33,11 @@ variance OnlineMeanAndVariance {mvN = n, mvX = r, mvM2 = m2} = m2 / fromInteger 
 ------- Utility ends here
 
 -- | Each bandit is characterized by its statistical properties of its scores (number, mean and variance), and by some opaque identity a seen only by the environment.
-data UCBBandits a = Bandits [(Stats, a)]
+data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
--- | selfVisitStats, #totalVisits -> upper confidence bound
+-- | selfVisitStats, #totalArms, #totalVisits -> upper confidence bound
 ucbBeta :: Stats -> Integer -> Integer -> Float -> Float
+ucbBeta stats _ _ _ | entries stats == 0 = 1/0
 ucbBeta stats arms round beta = empMean + confidenceSlow + confidenceFast
          where empMean = mean stats
                confidenceSlow = sqrt (2 * variance stats * logPart / visit)
@@ -47,14 +46,23 @@ ucbBeta stats arms round beta = empMean + confidenceSlow + confidenceFast
                logPart = log $ 1 / betaS
                betaS = beta / 4.0 / fromInteger arms / visit / (visit + fromInteger 1)
 
-class (Monad m) =>  BanditsProblem m where
-      payoff :: a -> m Float
-
-      play :: (m (UCBBandits a)) -> (m (UCBBandits a))
-      play bandits' = do
-          Bandits bandits <- bandits'
-          let
+{-chosenAndRest Bandits bandits =
+          let arms = toInteger $ length bandits
               (allStats, allIDs) = unzip bandits
+              totalVisits = sum $ map entries allStats
+              currUCB s = ucbBeta s arms totalVisits 0.01
+              maxUCB = maximum $ map currUCB allStats
+              (best, rest) = partition (\(s,i) -> (currUCB s == maxUCB)) bandits
+              (chosenStats, chosenIdentity) = head best
+          in 0 -}
+
+play :: UCBBandits a -> BanditProblem a -> IO (UCBBandits a)
+play bandits' problem =
+     let
+          Bandits bandits = bandits'
+          BanditProblem {bpPayoff = payoff} = problem
+     in do
+          let (allStats, allIDs) = unzip bandits
               totalVisits = sum $ map entries allStats
               arms = toInteger $ length bandits
               currUCB s = ucbBeta s arms totalVisits 0.01
@@ -65,6 +73,84 @@ class (Monad m) =>  BanditsProblem m where
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : (tail best) ++ rest))
 
-instance BanditsProblem Rand where
---  f x = min (abs (x - 1), abs (x + 1))
-  payoff arm = arm + getRandomR (0.0,1.0)
+data BanditProblem a = BanditProblem {bpPayoff :: a -> IO Float}
+
+biggerIsBetter i = do return i
+
+--- instance Show (UCBBandit Float)
+
+main = let threeBandits = Bandits $ map (\ n -> (emptyStats, n)) [1..3]
+           bibProblem = (BanditProblem {bpPayoff = biggerIsBetter})
+       in do
+                resultingBandits <- play threeBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                resultingBandits <- play resultingBandits bibProblem
+                return resultingBandits
