@@ -72,30 +72,15 @@ data BanditProblem a = BanditProblem {bpPayoff :: a -> IO Float}
 
 biggerIsBetter i = do return i
 
---- instance Show (UCBBandit Float)
+-- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
+iterationResult :: (Num a, Ord a) => a -> t -> (t -> t) -> t
+iterationResult n a f | n <= 0 = a
+                      | otherwise = f $ iterationResult (n - 1) a f
 
 main = let threeBandits = Bandits $ map (\ n -> (emptyStats, n)) [1..3]
            bibProblem = (BanditProblem {bpPayoff = biggerIsBetter})
-       in do
-                resultingBandits <- play threeBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                resultingBandits <- play resultingBandits bibProblem
-                return resultingBandits
+           start = do return threeBandits
+           round bs = do v <- bs
+                         v `play` bibProblem
+       in iterationResult 1000 start round
+
