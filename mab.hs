@@ -8,8 +8,8 @@ import Control.Monad.IO.Class
 -- |Donald E. Knuth (1998). The Art of Computer Programming, volume 2: Seminumerical Algorithms, 3rd edn., p. 232. Boston: Addison-Wesley.
 data Stats = OnlineMeanAndVariance {
      mvN :: Integer,   -- number of samples so far
-     mvX,          -- current mean
-     mvM2 :: Float -- extra information for variance
+     mvX,              -- current mean
+     mvM2 :: Float     -- extra information for variance
 } deriving Show
 
 -- |Stats for the empty sequence.
@@ -30,12 +30,13 @@ entries OnlineMeanAndVariance {mvN = n} = n
 mean OnlineMeanAndVariance {mvX = r} = r
 -- |Variance of entries
 variance OnlineMeanAndVariance {mvN = n, mvX = r, mvM2 = m2} = m2 / fromInteger n
-------- Utility ends here
+------- Utility section ends here
 
 -- | Each bandit is characterized by its statistical properties of its scores (number, mean and variance), and by some opaque identity a seen only by the environment.
 data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
--- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound
+-- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
+-- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
 ucbBeta :: Stats -> Integer -> Integer -> Float -> Float
 ucbBeta stats _ _ _ | entries stats == 0 = 1/0
 ucbBeta stats arms round beta = empMean + confidenceSlow + confidenceFast
@@ -70,6 +71,7 @@ play bandits' problem =
 
 data BanditProblem a = BanditProblem {bpPayoff :: a -> IO Float}
 
+-- | A trivial bandit problem: the payoff equals the identity.
 biggerIsBetter i = do return i
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
