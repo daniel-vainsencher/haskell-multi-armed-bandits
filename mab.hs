@@ -35,7 +35,7 @@ variance OnlineMeanAndVariance {mvN = n, mvX = r, mvM2 = m2} = m2 / fromInteger 
 -- | Each bandit is characterized by its statistical properties of its scores (number, mean and variance), and by some opaque identity a seen only by the environment.
 data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
--- | Each bandit in a tree also has a list of reachable nodes. Note that here the Stats of a node include also visits to its children. Invariant: a BanditNode has at least one visit in its stats.
+-- | Each bandit in a tree also has a list of reachable nodes. Note that here the Stats of a node include also visits to its children. Intended invariant: a BanditNode has at least one visit in its stats.
 data BanditTree a = BanditNode Stats a [BanditTree a] deriving Show
 
 
@@ -63,7 +63,7 @@ chosenAndRest (Bandits bandits) =
           in (chosenArm , (tail best) ++ rest)
 
 -- |Play the UCB algorithm with a given history and problem, returning the updated history.
-play :: UCBBandits a -> BanditProblem a -> IO (UCBBandits a)
+play :: UCBBandits a -> BanditProblem a b -> IO (UCBBandits a)
 play bandits' problem =
      let
           BanditProblem {bpPayoff = payoff} = problem
@@ -73,22 +73,25 @@ play bandits' problem =
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : otherArms))
 
-playFromTree :: BanditTree a -> BanditProblem a -> IO (BanditTree a)
-playFromTree = undefined
+{-playFromTree :: BanditTree a -> BanditProblem a b -> IO (BanditTree a)
+playFromTree (BanditNode stats id sons) (BanditProblem payoff list) = 
+	     let -}
 
-data BanditProblem a = BanditProblem {bpPayoff :: a -> IO Float}
+-- | bpPayoff represents the feedback giving environment, bpNodeList represents the problem structure: it returns a list of possible actions identities. In a tree structured problem it might be given a current action identity.
 
--- | A trivial bandit problem: the payoff equals the identity.
-biggerIsBetter i = do return i
+data BanditProblem a b = BanditProblem {bpPayoff :: a -> IO Float, bpNodeList :: b -> [a]}
+
+-- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
+biggerIsBetter = BanditProblem (\i -> do return i) (\n -> [1..n])
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
 iterationResult :: (Num a, Ord a) => a -> t -> (t -> t) -> t
 iterationResult n a f | n <= 0 = a
-                      | otherwise = f $ iterationResult (n - 1) a f
+                      | otherwise = iterationResult (n - 1) (f a) f
 
-main = let threeBandits = Bandits $ map (\ n -> (emptyStats, n)) [1..3]
-           bibProblem = (BanditProblem {bpPayoff = biggerIsBetter})
-           start = do return threeBandits
+main = let bibProblem = biggerIsBetter
+	   BanditProblem {bpNodeList = actionSpecifier} = biggerIsBetter
+	   start = do return (Bandits $ map (\ n -> (emptyStats, n)) $ actionSpecifier 3)
            round bs = do v <- bs
                          v `play` bibProblem
        in iterationResult 1000 start round
