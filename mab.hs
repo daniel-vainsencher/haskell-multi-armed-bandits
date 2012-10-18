@@ -35,8 +35,8 @@ variance OnlineMeanAndVariance {mvN = n, mvX = r, mvM2 = m2} = m2 / fromInteger 
 -- | Each bandit is characterized by its statistical properties of its scores (number, mean and variance), and by some opaque identity a seen only by the environment.
 data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
--- | Each bandit in a tree also has a list of reachable nodes. Note that here the Stats of a node include also visits to its children. Intended invariant: a BanditNode has at least one visit in its stats.
-data BanditTree a = BanditNode Stats a [BanditTree a] deriving Show
+-- | Each bandit in a tree also keeps a list of nodes for visited reachable ids, and a list of ids to be visited. Note that here the Stats of a node include also visits to its children. 
+data BanditTree a = BanditNode {bnStats :: Stats, bnId :: a, bnSons :: [BanditTree a], bnUnvisitedSons :: [a]} deriving Show
 
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
@@ -51,47 +51,86 @@ ucbBeta stats arms round beta = empMean + confidenceSlow + confidenceFast
                logPart = log $ 1 / betaS
                betaS = beta / 4.0 / fromInteger arms / visit / (visit + fromInteger 1)
 
+maximalAndRestBy :: (Ord b) => (a -> b) -> [a] -> (a, [a])
+maximalAndRestBy f [] = error "empty list has no maximal element"
+maximalAndRestBy f (x:[]) = (x, [])
+maximalAndRestBy f (x:x':xs) =
+    let rest = x':xs
+        (largestInSuffix, restFromSuffix) = maximalAndRestBy f rest
+    in case (f x) > (f largestInSuffix) of
+         True -> (x,rest)
+         False -> (largestInSuffix, x:restFromSuffix)
+
+
 -- |Choose an arm that maximizes ucbBeta (appropriate to play according to the UCB algorithm)
-chosenAndRest (Bandits bandits) =
+chosenAndRest bandits toStats =
           let arms = toInteger $ length bandits
-              (allStats, allIDs) = unzip bandits
-              totalVisits = sum $ map entries allStats
-              currUCB s = ucbBeta s arms totalVisits 0.1
-              maxUCB = maximum $ map currUCB allStats
-              (best, rest) = partition (\(s,i) -> (currUCB s == maxUCB)) bandits
-              chosenArm = head best
-          in (chosenArm , (tail best) ++ rest)
+              totalVisits = sum $ map (entries . toStats) bandits
+              currUCB b = ucbBeta (toStats b) arms totalVisits 0.1
+              maxUCB = maximum $ map currUCB bandits
+          in maximalAndRestBy currUCB bandits
 
 -- |Play the UCB algorithm with a given history and problem, returning the updated history.
 play :: UCBBandits a -> BanditProblem a b -> IO (UCBBandits a)
-play bandits' problem =
+play (Bandits bandits) problem =
      let
           BanditProblem {bpPayoff = payoff} = problem
-          ((chosenStats, chosenIdentity), otherArms) = chosenAndRest bandits'
+          ((chosenStats, chosenIdentity), otherArms) = chosenAndRest bandits (\(s,i) -> s)
      in do
           newScore <- payoff chosenIdentity
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : otherArms))
 
-{-playFromTree :: BanditTree a -> BanditProblem a b -> IO (BanditTree a)
-playFromTree (BanditNode stats id sons) (BanditProblem payoff list) = 
-	     let -}
+initTree :: a -> BanditProblem a a -> BanditTree a
+initTree rootId (BanditProblem _ nodeList) = BanditNode emptyStats rootId [] (nodeList rootId)
 
--- | bpPayoff represents the feedback giving environment, bpNodeList represents the problem structure: it returns a list of possible actions identities. In a tree structured problem it might be given a current action identity.
+playFromTree :: BanditTree a -> BanditProblem a a -> IO (Float, BanditTree a)
+-- If we have unvisited nodes, and the visited nodes have had sufficient attention, get a new node.
+playFromTree (BanditNode stats id sons (xunvisited:xs)) (BanditProblem payoff list)
+   | fromInteger (toInteger (length sons)) <= (sqrt $ fromInteger (entries stats)) =
+     do newScore <- payoff xunvisited
+        let newStats = emptyStats `withEntry` newScore
+            newNode = BanditNode newStats xunvisited [] (list xunvisited)
+            updatedStats = (stats `withEntry` newScore)
+        return (newScore, (BanditNode updatedStats id (newNode:sons) xs))
+-- If there are no unvisited nodes, and there is at least one visited son: visit a visited son.
+-- If attention to visited hasn't been sufficient, and there is at least one visited son: visit a visited son.
+playFromTree (BanditNode stats id sons@(s:ss) unvisited) problem =
+   let (chosenSon, otherSons) = chosenAndRest sons (\(BanditNode s _ _ _) -> s)
+     in do
+          (newScore, updatedSon) <- playFromTree chosenSon problem 
+          let updatedStats = stats `withEntry` newScore
+          return (newScore, BanditNode updatedStats id (updatedSon : otherSons) unvisited)
+-- If we arrive here, there are no visited sons, and in particular, no attention deficit, therefore there are no unvisited sons left. So we can only play the current son. When feedback is deterministic, this is wasteful.
+playFromTree (BanditNode stats id [] []) (BanditProblem payoff _) =
+     do newScore <- payoff id
+        let updatedStats = (stats `withEntry` newScore)
+        return (newScore, BanditNode updatedStats id [] [])
 
+playFromTree _ _ = error "Logic error in playFromTree: should not arrive here."
+
+-- | bpPayoff represents the feedback giving environment, bpNodeList represents the problem structure: it returns a list of possible actions identities. In a tree structured problem it might be given a current action identity, then we'd have a=b.
 data BanditProblem a b = BanditProblem {bpPayoff :: a -> IO Float, bpNodeList :: b -> [a]}
 
 -- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
-biggerIsBetter = BanditProblem (\i -> do return i) (\n -> [1..n])
+biggerIsBetter n = BanditProblem (\i -> do return i) (\m -> case m of 0 -> [1..n]; _ -> [])
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
 iterationResult :: (Num a, Ord a) => a -> t -> (t -> t) -> t
 iterationResult n a f | n <= 0 = a
                       | otherwise = iterationResult (n - 1) (f a) f
 
-main = let bibProblem = biggerIsBetter
-	   BanditProblem {bpNodeList = actionSpecifier} = biggerIsBetter
-	   start = do return (Bandits $ map (\ n -> (emptyStats, n)) $ actionSpecifier 3)
+{-
+main = let bibProblem = biggerIsBetter 3
+           start = do return (initTree 0 bibProblem)
+           round bs = do v <- bs
+                         (s, nbs) <- v `playFromTree` bibProblem
+	                 return nbs
+       in iterationResult 1000 start round -}
+
+main = let bibProblem = biggerIsBetter 3
+           BanditProblem {bpNodeList = actionSpecifier} = bibProblem
+           start = do return (Bandits $ map (\ n -> (emptyStats, n)) $ actionSpecifier 0)
            round bs = do v <- bs
                          v `play` bibProblem
        in iterationResult 1000 start round
