@@ -35,6 +35,10 @@ variance OnlineMeanAndVariance {mvN = n, mvX = r, mvM2 = m2} = m2 / fromInteger 
 -- | Each bandit is characterized by its statistical properties of its scores (number, mean and variance), and by some opaque identity a seen only by the environment.
 data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
+-- | Each bandit in a tree also has a list of reachable nodes. Note that here the Stats of a node include also visits to its children. Invariant: a BanditNode has at least one visit in its stats.
+data BanditTree a = BanditNode Stats a [BanditTree a] deriving Show
+
+
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
 ucbBeta :: Stats -> Integer -> Integer -> Float -> Float
@@ -69,6 +73,9 @@ play bandits' problem =
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : otherArms))
 
+playFromTree :: BanditTree a -> BanditProblem a -> IO (BanditTree a)
+playFromTree = undefined
+
 data BanditProblem a = BanditProblem {bpPayoff :: a -> IO Float}
 
 -- | A trivial bandit problem: the payoff equals the identity.
@@ -85,4 +92,3 @@ main = let threeBandits = Bandits $ map (\ n -> (emptyStats, n)) [1..3]
            round bs = do v <- bs
                          v `play` bibProblem
        in iterationResult 1000 start round
-
