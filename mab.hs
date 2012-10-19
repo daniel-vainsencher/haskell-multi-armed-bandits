@@ -2,7 +2,8 @@
 module MultiArmedBandit where
 import Data.List
 import Control.Monad.IO.Class
-
+import System.Random
+import Text.Printf
 --------- This section is a utility for maintaining empirical mean and variance estimates without keeping all scores.
 -- |Sufficient information to calculate online mean and variance, see
 -- |Donald E. Knuth (1998). The Art of Computer Programming, volume 2: Seminumerical Algorithms, 3rd edn., p. 232. Boston: Addison-Wesley.
@@ -36,7 +37,7 @@ variance OnlineMeanAndVariance {mvN = n, mvX = r, mvM2 = m2} = m2 / fromInteger 
 data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
 -- | Each bandit in a tree also keeps a list of nodes for visited reachable ids, and a list of ids to be visited. Note that here the Stats of a node include also visits to its children. 
-data BanditTree a = BanditNode {bnStats :: Stats, bnId :: a, bnSons :: [BanditTree a], bnUnvisitedSons :: [a]} deriving Show
+data BanditTree a = BanditNode {bnStats :: Stats, bnId :: a, bnSons :: [BanditTree a], bnUnvisitedSons :: [IO a]}
 
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
@@ -84,53 +85,64 @@ play (Bandits bandits) problem =
 initTree :: a -> BanditProblem a a -> BanditTree a
 initTree rootId (BanditProblem _ nodeList) = BanditNode emptyStats rootId [] (nodeList rootId)
 
-playFromTree :: BanditTree a -> BanditProblem a a -> IO (Float, BanditTree a)
+playFromTree :: BanditTree a -> BanditProblem a a -> IO (a, Float, BanditTree a)
 -- If we have unvisited nodes, and the visited nodes have had sufficient attention, get a new node.
 playFromTree (BanditNode stats id sons (xunvisited:xs)) (BanditProblem payoff list)
    | fromInteger (toInteger (length sons)) <= (sqrt $ fromInteger (entries stats)) =
-     do newScore <- payoff xunvisited
+     do newAction <- xunvisited
+        newScore <- payoff newAction
         let newStats = emptyStats `withEntry` newScore
-            newNode = BanditNode newStats xunvisited [] (list xunvisited)
-            updatedStats = (stats `withEntry` newScore)
-        return (newScore, (BanditNode updatedStats id (newNode:sons) xs))
+        let newUnvisited = list newAction
+        let newNode = BanditNode newStats newAction [] newUnvisited
+        let updatedStats = (stats `withEntry` newScore)
+        return (newAction, newScore, (BanditNode updatedStats id (newNode:sons) xs))
 -- If there are no unvisited nodes, and there is at least one visited son: visit a visited son.
 -- If attention to visited hasn't been sufficient, and there is at least one visited son: visit a visited son.
 playFromTree (BanditNode stats id sons@(s:ss) unvisited) problem =
    let (chosenSon, otherSons) = chosenAndRest sons (\(BanditNode s _ _ _) -> s)
      in do
-          (newScore, updatedSon) <- playFromTree chosenSon problem 
+          (action, newScore, updatedSon) <- playFromTree chosenSon problem
           let updatedStats = stats `withEntry` newScore
-          return (newScore, BanditNode updatedStats id (updatedSon : otherSons) unvisited)
+          return (action, newScore, BanditNode updatedStats id (updatedSon : otherSons) unvisited)
 -- If we arrive here, there are no visited sons, and in particular, no attention deficit, therefore there are no unvisited sons left. So we can only play the current son. When feedback is deterministic, this is wasteful.
 playFromTree (BanditNode stats id [] []) (BanditProblem payoff _) =
      do newScore <- payoff id
         let updatedStats = (stats `withEntry` newScore)
-        return (newScore, BanditNode updatedStats id [] [])
+        return (id, newScore, BanditNode updatedStats id [] [])
 
 playFromTree _ _ = error "Logic error in playFromTree: should not arrive here."
 
 -- | bpPayoff represents the feedback giving environment, bpNodeList represents the problem structure: it returns a list of possible actions identities. In a tree structured problem it might be given a current action identity, then we'd have a=b.
-data BanditProblem a b = BanditProblem {bpPayoff :: a -> IO Float, bpNodeList :: b -> [a]}
+data BanditProblem a b = BanditProblem {bpPayoff :: a -> IO Float, bpNodeList :: b -> [IO a]}
 
 -- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
-biggerIsBetter n = BanditProblem (\i -> do return i) (\m -> case m of 0 -> [1..n]; _ -> [])
+biggerIsBetter n = BanditProblem (\i -> do return i)
+                                 (\m -> case m of
+                                     0 -> [do return m | m <- [1..n]]
+                                     _ -> [])
+
+-- | A simple non concave problem testing UCT
+{- twinPeaks = BanditProblem (\x -> do return (- (min (abs (x+1)) (abs (x-1))))) (\x -> randomList x)
+randomList x = randomRIO (x-1,x+1) : randomList x -}
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
 iterationResult :: (Num a, Ord a) => a -> t -> (t -> t) -> t
 iterationResult n a f | n <= 0 = a
                       | otherwise = iterationResult (n - 1) (f a) f
 
-{-
-main = let bibProblem = biggerIsBetter 3
+
+{- main = let bibProblem = biggerIsBetter 3
            start = do return (initTree 0 bibProblem)
            round bs = do v <- bs
-                         (s, nbs) <- v `playFromTree` bibProblem
+                         (a, s, nbs) <- v `playFromTree` bibProblem
+                         printf "Did: %s got: %f\n" (show a) s
 	                 return nbs
        in iterationResult 1000 start round -}
 
-main = let bibProblem = biggerIsBetter 3
-           BanditProblem {bpNodeList = actionSpecifier} = bibProblem
-           start = do return (Bandits $ map (\ n -> (emptyStats, n)) $ actionSpecifier 0)
-           round bs = do v <- bs
-                         v `play` bibProblem
-       in iterationResult 1000 start round
+{-main = do let bibProblem = biggerIsBetter 3
+              BanditProblem {bpNodeList = actionSpecifier} = bibProblem
+          actions <- sequence (actionSpecifier 0)
+          let start = do return (Bandits $ map (\ n -> (emptyStats, n)) $ actions)
+              round bs = do v <- bs
+                            v `play` bibProblem
+          iterationResult 1000 start round -}
