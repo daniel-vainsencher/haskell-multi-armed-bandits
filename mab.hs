@@ -122,8 +122,8 @@ biggerIsBetter n = BanditProblem (\i -> do return i)
                                      _ -> [])
 
 -- | A simple non concave problem testing UCT
-{- twinPeaks = BanditProblem (\x -> do return (- (min (abs (x+1)) (abs (x-1))))) (\x -> randomList x)
-randomList x = randomRIO (x-1,x+1) : randomList x -}
+twinPeaks = BanditProblem (\x -> do return (- (min (abs (x+1)) (abs (x-1))))) (\x -> randomList x)
+randomList x = randomRIO (x-0.1,x+0.1) : randomList x
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
 iterationResult :: (Num a, Ord a) => a -> t -> (t -> t) -> t
@@ -131,13 +131,14 @@ iterationResult n a f | n <= 0 = a
                       | otherwise = iterationResult (n - 1) (f a) f
 
 
-{- main = let bibProblem = biggerIsBetter 3
-           start = do return (initTree 0 bibProblem)
+--main = let problem = biggerIsBetter 3
+main = let problem = twinPeaks
+           start = do return (initTree 0 problem)
            round bs = do v <- bs
-                         (a, s, nbs) <- v `playFromTree` bibProblem
+                         (a, s, nbs) <- v `playFromTree` problem
                          printf "Did: %s got: %f\n" (show a) s
 	                 return nbs
-       in iterationResult 1000 start round -}
+       in iterationResult 100000 start round
 
 {-main = do let bibProblem = biggerIsBetter 3
               BanditProblem {bpNodeList = actionSpecifier} = bibProblem
