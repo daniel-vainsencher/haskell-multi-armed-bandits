@@ -36,9 +36,22 @@ variance OnlineMeanAndVariance {mvN = n, mvX = r, mvM2 = m2} = m2 / fromInteger 
 -- | Each bandit is characterized by its statistical properties of its scores (number, mean and variance), and by some opaque identity a seen only by the environment.
 data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
--- | Each bandit in a tree also keeps a list of nodes for visited reachable ids, and a list of ids to be visited. Note that here the Stats of a node include also visits to its children. 
-data BanditTree a = BanditNode {bnStats :: Stats, bnId :: a, bnSons :: [BanditTree a], bnUnvisitedSons :: [IO a]}
 
+
+-----------------------  Generic code ---------------------------
+-- | Each bandit in a tree also keeps a list of nodes for visited reachable ids, and a list of ids to be visited. Note that here the Stats of a node include also visits to its children. 
+data BanditTree m a 
+  = BanditNode { bnStats :: Stats             -- Score at his node
+               , bnId :: a                    -- Game state at this node
+               , bnSons :: [BanditTree m a]
+               , bnUnvisitedSons :: [m a] }
+
+-- | bpPayoff represents the feedback giving environment, bpNodeList
+-- represents the problem structure: it returns a list of possible
+-- actions identities. In a tree structured problem it might be given
+-- a current action identity, then we'd have a=b.
+data BanditProblem m a = BanditProblem { bpPayoff   :: a -> m Float
+                                       , bpNodeList :: a -> [m a]}
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
@@ -72,7 +85,7 @@ chosenAndRest bandits toStats =
           in maximalAndRestBy currUCB bandits
 
 -- |Play the UCB algorithm with a given history and problem, returning the updated history.
-play :: UCBBandits a -> BanditProblem a b -> IO (UCBBandits a)
+play :: Monad m => UCBBandits a -> BanditProblem m a -> m (UCBBandits a)
 play (Bandits bandits) problem =
      let
           BanditProblem {bpPayoff = payoff} = problem
@@ -82,47 +95,64 @@ play (Bandits bandits) problem =
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : otherArms))
 
-initTree :: a -> BanditProblem a a -> BanditTree a
-initTree rootId (BanditProblem _ nodeList) = BanditNode emptyStats rootId [] (nodeList rootId)
+initTree :: a -> BanditProblem m a -> BanditTree m a
+initTree rootId (BanditProblem _ nodeList) 
+  = BanditNode { bnStats = emptyStats, bnId = rootId, bnSons = [], bnUnvisitedSons = nodeList rootId }
 
-playFromTree :: BanditTree a -> BanditProblem a a -> IO (a, Float, BanditTree a)
--- If we have unvisited nodes, and the visited nodes have had sufficient attention, get a new node.
-playFromTree (BanditNode stats id sons (xunvisited:xs)) (BanditProblem payoff list)
-   | fromInteger (toInteger (length sons)) <= (sqrt $ fromInteger (entries stats)) =
-     do newAction <- xunvisited
-        newScore <- payoff newAction
+playFromTree :: Monad m => BanditProblem m a -> BanditTree m a 
+                        -> m (a, Float, BanditTree m a)
+-- A single iteration of main loop: 
+-- Returns (state after chosen move, its payoff, updated tree)
+
+-- First possibility: if we have unvisited nodes, and
+-- the visited nodes have had sufficient attention, get a new node.
+playFromTree (BanditProblem payoff list) (BanditNode stats id sons (xunvisited : xs))
+   | fromInteger (toInteger (length sons)) <= (sqrt $ fromInteger (entries stats))
+   = do newState <- xunvisited
+        newScore <- payoff newState
         let newStats = emptyStats `withEntry` newScore
-        let newUnvisited = list newAction
-        let newNode = BanditNode newStats newAction [] newUnvisited
+        let newUnvisited = list newState
+        let newNode = BanditNode newStats newState [] newUnvisited
         let updatedStats = (stats `withEntry` newScore)
-        return (newAction, newScore, (BanditNode updatedStats id (newNode:sons) xs))
--- If there are no unvisited nodes, and there is at least one visited son: visit a visited son.
--- If attention to visited hasn't been sufficient, and there is at least one visited son: visit a visited son.
-playFromTree (BanditNode stats id sons@(s:ss) unvisited) problem =
-   let (chosenSon, otherSons) = chosenAndRest sons (\(BanditNode s _ _ _) -> s)
-     in do
-          (action, newScore, updatedSon) <- playFromTree chosenSon problem
+        return (newState, newScore, (BanditNode updatedStats id (newNode:sons) xs))
+
+-- Second possiblity: go down an already-visited son
+-- If there are no unvisited nodes, and there is at
+-- least one visited son: visit a visited son.  If attention to
+-- visited hasn't been sufficient, and there is at least one visited
+-- son: visit a visited son.
+playFromTree problem (BanditNode stats id sons unvisited)
+  | not (null sons)   -- We need at least one son
+  = let (chosenSon, otherSons) = chosenAndRest sons bnStats   -- Pick son with highest upper bound
+    in do (action, newScore, updatedSon) <- playFromTree problem chosenSon
           let updatedStats = stats `withEntry` newScore
           return (action, newScore, BanditNode updatedStats id (updatedSon : otherSons) unvisited)
--- If we arrive here, there are no visited sons, and in particular, no attention deficit, therefore there are no unvisited sons left. So we can only play the current son. When feedback is deterministic, this is wasteful.
-playFromTree (BanditNode stats id [] []) (BanditProblem payoff _) =
+
+-- Third possibility: if we arrive here, there are no visited sons, and in particular, no
+-- attention deficit, therefore there are no unvisited sons left. So
+-- we can only play the current node. When feedback is deterministic,
+-- this is wasteful.
+playFromTree (BanditProblem payoff _) (BanditNode stats id [] []) =
      do newScore <- payoff id
         let updatedStats = (stats `withEntry` newScore)
         return (id, newScore, BanditNode updatedStats id [] [])
 
 playFromTree _ _ = error "Logic error in playFromTree: should not arrive here."
 
--- | bpPayoff represents the feedback giving environment, bpNodeList represents the problem structure: it returns a list of possible actions identities. In a tree structured problem it might be given a current action identity, then we'd have a=b.
-data BanditProblem a b = BanditProblem {bpPayoff :: a -> IO Float, bpNodeList :: b -> [IO a]}
-
+---------------------- Problem 1: bigger is better --------------------
 -- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
-biggerIsBetter n = BanditProblem (\i -> do return i)
-                                 (\m -> case m of
-                                     0 -> [do return m | m <- [1..n]]
-                                     _ -> [])
+biggerIsBetter :: Int -> BanditProblem IO Float
+biggerIsBetter n = BanditProblem { bpPayoff = \i -> return i
+                                 , bpNodeList = \m -> case m of
+                                                        0 -> [return (fromInteger $ toInteger m) | m <- [1..n]]
+                                     			_ -> [] }
 
+---------------------- Problem 2: twinPeaks --------------------
 -- | A simple non concave problem testing UCT
-twinPeaks = BanditProblem (\x -> do return (- (min (abs (x+1)) (abs (x-1))))) (\x -> randomList x)
+-- An infinitely-branching tree of possiblities
+twinPeaks :: BanditProblem IO Float
+twinPeaks = BanditProblem { bpPayoff = \x -> return (- (min (abs (x+1)) (abs (x-1)))) 
+                          , bpNodeList = \x -> randomList x }
 randomList x = randomRIO (x-0.1,x+0.1) : randomList x
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
@@ -131,14 +161,14 @@ iterationResult n a f | n <= 0 = a
                       | otherwise = iterationResult (n - 1) (f a) f
 
 
---main = let problem = biggerIsBetter 3
-main = let problem = twinPeaks
+main = let problem = biggerIsBetter 3
+-- main = let problem = twinPeaks
            start = do return (initTree 0 problem)
            round bs = do v <- bs
-                         (a, s, nbs) <- v `playFromTree` problem
+                         (a, s, nbs) <- playFromTree problem v
                          printf "Did: %s got: %f\n" (show a) s
 	                 return nbs
-       in iterationResult 100000 start round
+       in iterationResult 1000 start round
 
 {-main = do let bibProblem = biggerIsBetter 3
               BanditProblem {bpNodeList = actionSpecifier} = bibProblem
@@ -146,4 +176,4 @@ main = let problem = twinPeaks
           let start = do return (Bandits $ map (\ n -> (emptyStats, n)) $ actions)
               round bs = do v <- bs
                             v `play` bibProblem
-          iterationResult 1000 start round -}
+          iterationResult 1000 start round-}
