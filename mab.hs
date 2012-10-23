@@ -107,7 +107,7 @@ playFromTree :: Monad m => BanditProblem m a -> BanditTree m a
 -- First possibility: if we have unvisited nodes, and
 -- the visited nodes have had sufficient attention, get a new node.
 playFromTree (BanditProblem payoff list) (BanditNode stats id sons (xunvisited : xs))
-   | fromInteger (toInteger (length sons)) <= (sqrt $ fromInteger (entries stats))
+   | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
    = do newState <- xunvisited
         newScore <- payoff newState
         let newStats = emptyStats `withEntry` newScore
