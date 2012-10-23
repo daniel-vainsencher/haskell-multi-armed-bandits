@@ -156,24 +156,48 @@ twinPeaks = BanditProblem { bpPayoff = \x -> return (- (min (abs (x+1)) (abs (x-
 randomList x = randomRIO (x-0.1,x+0.1) : randomList x
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
-iterationResult :: (Num a, Ord a) => a -> t -> (t -> t) -> t
-iterationResult n a f | n <= 0 = a
-                      | otherwise = iterationResult (n - 1) (f a) f
+iterationResult :: (Num a, Ord a) => a -> (t -> t) -> t -> t
+iterationResult n f a | n <= 0 = a
+                      | otherwise = iterationResult (n - 1) f (f a)
 
+problem = twinPeaks
+printingRound bs
+              = do v <- bs
+                   (a, s, nbs) <- playFromTree problem v
+                   printf "Got: %f\n" s
+                   return nbs
 
-main = let problem = biggerIsBetter 3
--- main = let problem = twinPeaks
-           start = do return (initTree 0 problem)
-           round bs = do v <- bs
-                         (a, s, nbs) <- playFromTree problem v
-                         printf "Did: %s got: %f\n" (show a) s
-	                 return nbs
-       in iterationResult 1000 start round
+silentRound bs
+             = do v <- bs
+                  (a, s, nbs) <- playFromTree problem v
+                  return nbs
 
-{-main = do let bibProblem = biggerIsBetter 3
-              BanditProblem {bpNodeList = actionSpecifier} = bibProblem
-          actions <- sequence (actionSpecifier 0)
-          let start = do return (Bandits $ map (\ n -> (emptyStats, n)) $ actions)
-              round bs = do v <- bs
-                            v `play` bibProblem
-          iterationResult 1000 start round-}
+statCarryingRound pair -- IO (banditTree, stats)
+                  = do (v, oldSt) <- pair
+                       (a, s, nbs) <- playFromTree problem v
+                       return (nbs, oldSt `withEntry` s)
+
+start :: IO (BanditTree IO Float)
+start = return (initTree 0 problem)
+
+simulationStep
+  :: (Eq t, Num t) =>
+     (t, BanditTree IO Float, Stats)
+     -> IO (Maybe (Stats, (t, BanditTree IO Float, Stats)))
+simulationStep (i, _, _) | i == 0 = return Nothing
+simulationStep triplet = 
+	let (i, bt, stat) = triplet 
+        in do (a, s, nbs) <- playFromTree problem bt
+	      return (Just (stat, (i-1, nbs, stat `withEntry` s)))
+
+unfoldrMine      :: (tb -> IO (Maybe (ta, tb))) -> tb -> IO [ta]
+unfoldrMine f b  = do
+  x <- f b 
+  case x of
+   Just (a,new_b) -> do rest <- unfoldrMine f new_b
+			return (a : rest)
+   Nothing        -> return []
+
+main = do startbt <- start
+	  allStats <- unfoldrMine simulationStep (1000, startbt, emptyStats)
+	  return (last allStats)
