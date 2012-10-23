@@ -1,5 +1,5 @@
 
-module MultiArmedBandit where
+module Main where
 import Data.List
 import Control.Monad.IO.Class
 import System.Random
