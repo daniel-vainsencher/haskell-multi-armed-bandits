@@ -8,9 +8,9 @@ import Text.Printf
 -- |Sufficient information to calculate online mean and variance, see
 -- |Donald E. Knuth (1998). The Art of Computer Programming, volume 2: Seminumerical Algorithms, 3rd edn., p. 232. Boston: Addison-Wesley.
 data Stats = OnlineMeanAndVariance {
-     mvN :: Integer,   -- number of samples so far
+     mvN :: !Integer,   -- number of samples so far
      mvX,              -- current mean
-     mvM2 :: Float     -- extra information for variance
+     mvM2 :: !Float     -- extra information for variance
 } deriving Show
 
 -- |Stats for the empty sequence.
