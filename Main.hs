@@ -4,6 +4,8 @@ import Data.List
 import Control.Monad.IO.Class
 import System.Random
 import Text.Printf
+import Text.PrettyPrint.HughesPJ
+
 --------- This section is a utility for maintaining empirical mean and variance estimates without keeping all scores.
 -- |Sufficient information to calculate online mean and variance, see
 -- |Donald E. Knuth (1998). The Art of Computer Programming, volume 2: Seminumerical Algorithms, 3rd edn., p. 232. Boston: Addison-Wesley.
@@ -11,7 +13,10 @@ data Stats = OnlineMeanAndVariance {
      mvN :: !Integer,   -- number of samples so far
      mvX,              -- current mean
      mvM2 :: !Float     -- extra information for variance
-} deriving Show
+}
+
+instance Show Stats where
+  show st = printf "#=%d mean=%f var=%f" (entries st) (mean st) (variance st)
 
 -- |Stats for the empty sequence.
 emptyStats = OnlineMeanAndVariance {mvN = 0, mvX = 0, mvM2 = 0}
@@ -45,6 +50,16 @@ data BanditTree m a
                , bnId :: a                    -- Game state at this node
                , bnSons :: [BanditTree m a]
                , bnUnvisitedSons :: [m a] }
+
+instance Show a => Show (BanditTree m a) where
+  show bt = show $ prettyBanditTree bt
+
+prettyBanditTree (BanditNode bnStats bnId bnSons bnUS)
+  = own $$ (nest 2 $ vcat sons)
+    where
+       own = text $ show (bnStats , bnId)
+       sons = map prettyBanditTree bnSons
+
 
 -- | bpPayoff represents the feedback giving environment, bpNodeList
 -- represents the problem structure: it returns a list of possible
