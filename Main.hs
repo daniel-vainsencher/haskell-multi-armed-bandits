@@ -76,9 +76,9 @@ bestNode t@(BanditNode {bnSons = sons}) = best
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
-ucbBeta :: Stats -> Integer -> Integer -> Float -> Float
-ucbBeta stats _ _ _ | entries stats == 0 = 1/0
-ucbBeta stats arms round beta = empMean + confidenceSlow + confidenceFast
+ucbBeta :: Stats -> Integer -> Float -> Float
+ucbBeta stats _ _ | entries stats == 0 = 1/0
+ucbBeta stats arms beta = empMean + confidenceSlow + confidenceFast
          where empMean = mean stats
                confidenceSlow = sqrt (2 * (variance stats) * logPart / visit)
 	       confidenceFast = 16 * logPart / 3 / visit
@@ -98,19 +98,18 @@ maximalAndRestBy f (x:x':xs) =
 
 
 -- |Choose an arm that maximizes ucbBeta (appropriate to play according to the UCB algorithm)
-chosenAndRest bandits toStats =
+chosenAndRest bandits toStats beta =
           let arms = toInteger $ length bandits
-              totalVisits = sum $ map (entries . toStats) bandits
-              currUCB b = ucbBeta (toStats b) arms totalVisits 0.1
+              currUCB b = ucbBeta (toStats b) arms beta
               maxUCB = maximum $ map currUCB bandits
           in maximalAndRestBy currUCB bandits
 
 -- |Play the UCB algorithm with a given history and problem, returning the updated history.
-play :: Monad m => UCBBandits a -> BanditProblem m a -> m (UCBBandits a)
-play (Bandits bandits) problem =
+play :: Monad m => UCBBandits a -> BanditProblem m a -> Float -> m (UCBBandits a)
+play (Bandits bandits) problem beta =
      let
           BanditProblem {bpPayoff = payoff} = problem
-          ((chosenStats, chosenIdentity), otherArms) = chosenAndRest bandits (\(s,i) -> s)
+          ((chosenStats, chosenIdentity), otherArms) = chosenAndRest bandits (\(s,i) -> s) beta
      in do
           newScore <- payoff chosenIdentity
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
@@ -120,14 +119,14 @@ initTree :: a -> BanditProblem m a -> BanditTree m a
 initTree rootId (BanditProblem _ nodeList) 
   = BanditNode { bnStats = emptyStats, bnId = rootId, bnSons = [], bnUnvisitedSons = nodeList rootId }
 
-playFromTree :: Monad m => BanditProblem m a -> BanditTree m a 
+playFromTree :: Monad m => BanditProblem m a -> BanditTree m a -> Float
                         -> m (a, Float, BanditTree m a)
 -- A single iteration of main loop: 
 -- Returns (state after chosen move, its payoff, updated tree)
 
 -- First possibility: if we have unvisited nodes, and
 -- the visited nodes have had sufficient attention, get a new node.
-playFromTree (BanditProblem payoff list) (BanditNode stats id sons (xunvisited : xs))
+playFromTree (BanditProblem payoff list) (BanditNode stats id sons (xunvisited : xs)) beta
    | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
    = do newState <- xunvisited
         newScore <- payoff newState
@@ -142,10 +141,10 @@ playFromTree (BanditProblem payoff list) (BanditNode stats id sons (xunvisited :
 -- least one visited son: visit a visited son.  If attention to
 -- visited hasn't been sufficient, and there is at least one visited
 -- son: visit a visited son.
-playFromTree problem (BanditNode stats id sons unvisited)
+playFromTree problem (BanditNode stats id sons unvisited) beta
   | not (null sons)   -- We need at least one son
-  = let (chosenSon, otherSons) = chosenAndRest sons bnStats   -- Pick son with highest upper bound
-    in do (action, newScore, updatedSon) <- playFromTree problem chosenSon
+  = let (chosenSon, otherSons) = chosenAndRest sons bnStats beta  -- Pick son with highest upper bound
+    in do (action, newScore, updatedSon) <- playFromTree problem chosenSon beta
           let updatedStats = stats `withEntry` newScore
           return (action, newScore, BanditNode updatedStats id (updatedSon : otherSons) unvisited)
 
@@ -153,12 +152,12 @@ playFromTree problem (BanditNode stats id sons unvisited)
 -- attention deficit, therefore there are no unvisited sons left. So
 -- we can only play the current node. When feedback is deterministic,
 -- this is wasteful.
-playFromTree (BanditProblem payoff _) (BanditNode stats id [] []) =
+playFromTree (BanditProblem payoff _) (BanditNode stats id [] []) beta =
      do newScore <- payoff id
         let updatedStats = (stats `withEntry` newScore)
         return (id, newScore, BanditNode updatedStats id [] [])
 
-playFromTree _ _ = error "Logic error in playFromTree: should not arrive here."
+playFromTree _ _ _ = error "Logic error in playFromTree: should not arrive here."
 
 ---------------------- Problem 1: bigger is better --------------------
 -- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
@@ -182,36 +181,18 @@ iterationResult n f a | n <= 0 = a
                       | otherwise = iterationResult (n - 1) f (f a)
 
 problem = twinPeaks
-printingRound bs
-              = do v <- bs
-                   (a, s, nbs) <- playFromTree problem v
-                   printf "Got: %f\n" s
-                   return nbs
-
-silentRound bs
-             = do v <- bs
-                  (a, s, nbs) <- playFromTree problem v
-                  return nbs
-
-statCarryingRound pair -- IO (banditTree, stats)
-                  = do (v, oldSt) <- pair
-                       (a, s, nbs) <- playFromTree problem v
-                       return (nbs, oldSt `withEntry` s)
 
 start :: IO (BanditTree IO Float)
 start = return (initTree 0 problem)
 
-simulationStep
-  :: (Eq t, Num t) =>
-     (t, BanditTree IO Float, Stats)
-     -> IO (Maybe (Stats, (t, BanditTree IO Float, Stats)))
-simulationStep (i, _, _) | i == 0 = return Nothing
-simulationStep triplet = 
-	let (i, bt, stat) = triplet 
-        in do (a, s, nbs) <- playFromTree problem bt
-	      return (Just (stat, (i-1, nbs, stat `withEntry` s)))
+simulationStep (i, _, _, _)  | i == 0 = return Nothing
+simulationStep triplet =
+        let (i, bt, stat, beta) = triplet
+        in do (a, s, nbs) <- playFromTree problem bt beta
+              return (Just ((a,s,nbs), (i-1, nbs, stat `withEntry` s, beta)))
 
-unfoldrMine      :: (tb -> IO (Maybe (ta, tb))) -> tb -> IO [ta]
+-- Ended up equivalent to unfoldrM from Control.Monad.Loops in monad-loops, but that's not standard issue.
+unfoldrMine      :: Monad m => (tb -> m (Maybe (ta, tb))) -> tb -> m [ta]
 unfoldrMine f b  = do
   x <- f b 
   case x of
@@ -220,5 +201,7 @@ unfoldrMine f b  = do
    Nothing        -> return []
 
 main = do startbt <- start
-	  allStats <- unfoldrMine simulationStep (1000, startbt, emptyStats)
-	  return (last allStats)
+          allResults <- unfoldrMine simulationStep (1000, startbt, emptyStats, 10)
+          return allResults
+{-main = do startbt <- start
+          return (unfoldrMine unfoldablePlay startbt) -}
