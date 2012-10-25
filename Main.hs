@@ -185,11 +185,11 @@ problem = twinPeaks
 start :: IO (BanditTree IO Float)
 start = return (initTree 0 problem)
 
-simulationStep (i, _, _, _)  | i == 0 = return Nothing
+simulationStep (i, _, _)  | i == 0 = return Nothing
 simulationStep triplet =
-        let (i, bt, stat, beta) = triplet
+        let (i, bt, beta) = triplet
         in do (a, s, nbs) <- playFromTree problem bt beta
-              return (Just ((a,s,nbs), (i-1, nbs, stat `withEntry` s, beta)))
+              return (Just ((a,s,nbs), (i-1, nbs, beta)))
 
 -- Ended up equivalent to unfoldrM from Control.Monad.Loops in monad-loops, but that's not standard issue.
 unfoldrMine      :: Monad m => (tb -> m (Maybe (ta, tb))) -> tb -> m [ta]
@@ -201,7 +201,7 @@ unfoldrMine f b  = do
    Nothing        -> return []
 
 main = do startbt <- start
-          allResults <- unfoldrMine simulationStep (1000, startbt, emptyStats, 10)
+          allResults <- unfoldrMine simulationStep (1000, startbt, 10)
           return allResults
 {-main = do startbt <- start
           return (unfoldrMine unfoldablePlay startbt) -}
