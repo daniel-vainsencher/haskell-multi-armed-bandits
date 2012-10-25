@@ -68,6 +68,12 @@ prettyBanditTree (BanditNode bnStats bnId bnSons bnUS)
 data BanditProblem m a = BanditProblem { bpPayoff   :: a -> m Float
                                        , bpNodeList :: a -> [m a]}
 
+bestNode :: BanditTree m a -> BanditTree m a
+bestNode t@(BanditNode {bnSons = []}) = t
+bestNode t@(BanditNode {bnSons = sons}) = best
+             where (best, rest) = maximalAndRestBy (mean . bnStats) $ map bestNode sons
+
+
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
 ucbBeta :: Stats -> Integer -> Integer -> Float -> Float
