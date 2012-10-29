@@ -32,6 +32,10 @@ withEntry (OnlineMeanAndVariance {mvN = n, mvX = x, mvM2 = m2}) xNew =
           where
                 delta = xNew - x
                 newMean = x + delta / fromInteger (n + 1)
+
+summarize :: [Float] -> Stats
+summarize = foldr (flip withEntry) emptyStats
+
 -- |Number of entries in sequence
 entries OnlineMeanAndVariance {mvN = n} = n
 -- |Mean of entries
