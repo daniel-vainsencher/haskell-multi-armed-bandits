@@ -5,6 +5,8 @@ import Control.Monad.IO.Class
 import System.Random
 import Text.Printf
 import Text.PrettyPrint.HughesPJ
+import Graphics.Rendering.Chart.Simple
+import GHC.Float
 
 --------- This section is a utility for maintaining empirical mean and variance estimates without keeping all scores.
 -- |Sufficient information to calculate online mean and variance, see
