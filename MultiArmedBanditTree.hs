@@ -1,5 +1,5 @@
 
-module MultiArmedBanditTree (runWithHistory, BanditProblem(..), start, bestNode, BanditTree(..)) where
+module MultiArmedBanditTree (runWithHistory, BanditProblem(..), start, bestNode, BanditTree(..), findBest) where
 import Data.List
 import Control.Monad.IO.Class
 import System.Random
@@ -238,3 +238,9 @@ main = do startbt <- start twinPeaks
           return allResults
 {-main = do startbt <- start
           return (unfoldrMine unfoldablePlay startbt) -}
+
+findBest budget beta problem =
+    do startbt <- start problem
+       allResults <- runWithHistory budget beta problem startbt
+       let tree = head $ reverse $ [c | (a,b,c) <- allResults]
+       return $ bnId $ bestNode problem tree

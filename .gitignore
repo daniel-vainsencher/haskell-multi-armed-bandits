@@ -1,3 +1,7 @@
 *.o
 *.hi
 *.hs~
+*.dyn_o
+*.dyn_hi
+/dist*
+

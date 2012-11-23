@@ -1,5 +1,8 @@
 module BinaryMAB.Plugin (plugin) where
 import GhcPlugins
+import MABOpt
+import MultiArmedBanditTree
+import SimplCore
 
 plugin :: Plugin
 plugin = defaultPlugin {
@@ -16,5 +19,13 @@ simpl_mode = SimplMode { sm_phase      = Phase 0
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install _ todo = do
   reinitializeGlobals
-  putMsgS "Hello!"
-  return $ todo ++ [CoreDoSimplify 2 [Just (repeat True), Nothing] simpl_mode]
+  return $ todo ++ [CoreDoPluginPass "Learning simplification" $ learnAndApply 3.0]
+-- Simplify 2 [Just (repeat True), Nothing] simpl_mode]
+
+learnAndApply :: Float -> ModGuts -> CoreM ModGuts
+
+learnAndApply _ mg
+    = do dflags <- getDynFlags
+         let problem = inliningProblem mg dflags
+         tape <- liftIO $ findBest 100 100 problem
+         simplifyPgm (todo $ tapeSetFromTape tape) mg

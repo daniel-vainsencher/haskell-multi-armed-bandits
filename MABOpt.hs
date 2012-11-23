@@ -1,5 +1,5 @@
 --invoke: ghci -package ghc Driver.hs
-module Main where
+module MABOpt (findBest, inliningProblem, tapeSetFromTape, todo) where
 
 import GHC
 import Outputable
@@ -83,6 +83,7 @@ work budget beta = do
   putStrLn $ stringFromTape bestTape
   return tree
 
+ 
 stringFromTape (True:ts)  = 'y' : stringFromTape ts
 stringFromTape (False:ts) = 'n' : stringFromTape ts
 stringFromTape []         = "N"
@@ -168,4 +169,3 @@ example =
 
         initialGuts <- return $ coreModule d
         return (initialGuts, dflags'')
-
