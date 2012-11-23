@@ -9,6 +9,7 @@ plugin = defaultPlugin {
   installCoreToDos = install
   }
 
+
 simpl_mode = SimplMode { sm_phase      = Phase 0
                          , sm_names      = []
                          , sm_rules      = True
@@ -16,16 +17,19 @@ simpl_mode = SimplMode { sm_phase      = Phase 0
                          , sm_inline     = True
                          , sm_case_case  = True }
 
+
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
-install _ todo = do
-  reinitializeGlobals
-  return $ todo ++ [CoreDoPluginPass "Learning simplification" $ learnAndApply 3.0]
--- Simplify 2 [Just (repeat True), Nothing] simpl_mode]
+install argstrings todo -- Expect argument to be a single string of form budget!beta
+   = let
+     in do reinitializeGlobals
+           return $ todo ++ [CoreDoPluginPass "Learning simplification" $ learnAndApply 100 100]
 
-learnAndApply :: Float -> ModGuts -> CoreM ModGuts
 
-learnAndApply _ mg
+learnAndApply :: Float -> Float -> ModGuts -> CoreM ModGuts
+learnAndApply budget beta mg
     = do dflags <- getDynFlags
-         let problem = inliningProblem mg dflags
-         tape <- liftIO $ findBest 100 100 problem
+         let dflags' = dopt_set dflags Opt_D_dump_simpl_stats
+         let problem = inliningProblem mg dflags'
+         tape <- liftIO $ findBest (ceiling budget) beta problem
+         liftIO $ putStrLn $ "Using the tape " ++ stringFromTape tape
          simplifyPgm (todo $ tapeSetFromTape tape) mg
