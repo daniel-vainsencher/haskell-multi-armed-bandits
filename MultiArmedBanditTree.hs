@@ -1,5 +1,5 @@
 
-module MultiArmedBanditTree (runWithHistory, BanditProblem(..), start, bestNode, BanditTree(..), findBest) where
+module MultiArmedBanditTree (runWithHistory, BanditProblem(..), start, bestNode, BanditTree(..), findBest, twinPeaks) where
 import Data.List
 import Control.Monad.IO.Class
 import System.Random

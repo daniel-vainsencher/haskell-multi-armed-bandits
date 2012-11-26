@@ -1,5 +1,5 @@
 --invoke: ghci -package ghc Driver.hs
-module MABOpt (findBest, inliningProblem, tapeSetFromTape, todo, stringFromTape) where
+module MABOpt (findBest, inliningProblem, tapeSetFromTape, todo, stringFromTape, work) where
 
 import GHC
 import Outputable
