@@ -1,5 +1,5 @@
 --invoke: ghci -package ghc Driver.hs
-module MABOpt (findBest, inliningProblem, tapeSetFromTape, todo, stringFromTape, work) where
+module MABOpt (findBest, inliningProblem, prestrictnessInliningProblem, tapeSetFromTape, todo, stringFromTape, work, inliningPayoff) where
 
 import GHC
 import Outputable
@@ -15,6 +15,7 @@ import CoreMonad
 import SimplMonad
 import BasicTypes
 import SimplCore
+import DmdAnal          ( dmdAnalPgm )
 import MultiArmedBanditTree
 
 
@@ -24,6 +25,9 @@ import Rules            ( RuleBase, emptyRuleBase, mkRuleBase, unionRuleBase,
 
 import UniqSupply       ( UniqSupply, mkSplitUniqSupply, splitUniqSupply )
 import DynFlags
+
+import System.CPUTime
+
 -- libdir :: FilePath
 -- libdir = "/home/t-davain/ghc-work/inplace/lib"
 targetName = "Main"
@@ -47,18 +51,55 @@ inliningProblem initGuts flags = BanditProblem {
                    bpRoot = [],
                    bpIsDeterministic = True}
 
+prestrictnessInliningProblem initGuts flags = BanditProblem {
+                   bpPlayAction = playTapeWithStrictness initGuts flags,
+                   bpRoot = [],
+                   bpIsDeterministic = True}
+
+
 inliningPayoff :: ModGuts -> DynFlags -> [SearchTapeElement] -> IO Float
 inliningPayoff guts dflags tape =
     do (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
        return $ scoreResults resGuts count
 
 
-playTape :: ModGuts -> DynFlags -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
-playTape guts dflags tape =
-    do (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
+-- Lifted from SimplCore
+doPassM bind_f guts = do
+    binds' <- bind_f (mg_binds guts)
+    return (guts { mg_binds = binds' })
+
+playTapeWithStrictness guts dflags tape = do
+       startTime <- liftIO getCPUTime
+       (guts1, count1, needMoreTape) <- tapeResults guts dflags tape
+       guts2 <- (doPassM (dmdAnalPgm dflags)) guts1
+       (resGuts, count2, _ ) <- tapeResults guts2 dflags []
+       endTime <- liftIO getCPUTime
        let actionList = if needMoreTape
               then [tape ++ [True], tape ++ [False]]
               else []
+       let seconds = fromIntegral (endTime - startTime) / 10 ** 12
+       liftIO $ putStrLn $ "Tape length=" ++ show (length tape) ++
+                           ", seconds to run: " ++ show seconds ++
+                           ", tape: " ++ stringFromTape tape ++
+                           if needMoreTape then "..." else "X"
+
+       return $ (scoreResults resGuts $ plusSimplCount count1 count2, actionList)
+
+
+playTape :: ModGuts -> DynFlags -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
+playTape guts dflags tape = do
+       startTime <- liftIO getCPUTime
+       (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
+       endTime <- liftIO getCPUTime
+       let actionList = if needMoreTape
+              then [tape ++ [True], tape ++ [False]]
+              else []
+       let seconds = fromIntegral (endTime - startTime) / 10 ** 12
+       liftIO $ putStrLn $ "Tape length=" ++ show (length tape) ++
+                           ", seconds to run: " ++ show seconds ++
+                           ", tape: " ++ stringFromTape tape ++
+                           if needMoreTape then "..." else "X"
+
        return $ (scoreResults resGuts count, actionList)
 
 main = work 1000 100
@@ -74,7 +115,7 @@ work budget beta = do
 
   -- putStrLn $ strFromGuts dflags gutsO
   let problem = inliningProblem gutsO dflags'
-  startbt <- start problem
+  startbt <- initTree problem
   allResults <- runWithHistory budget beta problem startbt
   let tree = head $ reverse $ [c | (a,b,c) <- allResults]
   let bestTape = bnId $ bestNode problem tree
@@ -148,6 +189,7 @@ simplifyWithTapes guts dflags tapes = do
         hsc_env <- liftIO $ newHscEnv dflags
         let home_pkg_rules = hptRules hsc_env (dep_mods (mg_deps guts))
         let hpt_rule_base  = mkRuleBase home_pkg_rules
+
         liftIO $ runCoreM hsc_env hpt_rule_base us (mg_module guts) $ do
            simplifyPgm (todo tapes) guts
 
