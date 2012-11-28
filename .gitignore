@@ -3,5 +3,8 @@
 *.hs~
 *.dyn_o
 *.dyn_hi
-/dist*
+dist
+cabal-dev
+*.chi
+*.chs.h
 
