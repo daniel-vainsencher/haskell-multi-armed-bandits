@@ -23,12 +23,14 @@ simpl_mode = SimplMode { sm_phase      = Phase 0
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install [argstring] todo -- Expect argument to be a single string of form budget:beta:pos
    = case splitOn ":" argstring of
-           [budgetS, betaS, posS] ->
+           [budgetS, betaS, posS, measureS] ->
              let readFloat = read :: String -> Float
                  beta = readFloat betaS
                  budget = readFloat budgetS
-                 stdAloneStage = CoreDoPluginPass "Learning simplification" $ learnAndApply inliningProblem budget beta
-                 strWrapStage = CoreDoPluginPass "Learning simplification for strictness analysis" $ learnAndApply prestrictnessInliningProblem budget beta
+                 measureList = read measureS :: [Float]
+                 measure = customMeasure measureList
+                 stdAloneStage = CoreDoPluginPass "Learning simplification" $ learnAndApply inliningProblem measure budget beta
+                 strWrapStage = CoreDoPluginPass "Learning simplification for strictness analysis" $ learnAndApply prestrictnessInliningProblem measure budget beta
              in do reinitializeGlobals
                    dflags <- getDynFlags
                    liftIO $ putStrLn $ "total budget: " ++ show budget
@@ -37,12 +39,22 @@ install [argstring] todo -- Expect argument to be a single string of form budget
                        "last" -> todo ++ [stdAloneStage]
                        "preStrict" -> injectBeforeStrictness todo stdAloneStage
                        "aroundStrict" -> injectBeforeStrictness todo strWrapStage
-                       _ -> error "Please use either last or preStrict as the position."
+                       _ -> error "Invalid position."
            _ -> usage argstring
 
 install argStrings _ = do liftIO $ usage argStrings
 
-usage argStrings = error $ "Please pass single string of form <budget>:<beta>:[last|preString]. Currently passed:" ++ show argStrings
+usage argStrings = error $ "Please pass single string of form <budget>:<beta>:[last|preStrict|aroundStrict]:<[Int] with 6 entries.>. Currently passed:" ++ show argStrings
+
+customMeasure list a = case a of
+  DeadBindingElim _ -> list!!0
+  KnownBranch _ -> list !! 1
+  RuleFired _ -> list !! 2
+  PreInlineUnconditionally _ -> list !! 3
+  EtaReduction _ -> list!!4
+  BetaReduction _ -> list!!5
+  otherwise -> 0
+
 
 injectBeforeStrictness [] new = []
 injectBeforeStrictness (s@(CoreDoStrictness):rest) new = new:s:(injectBeforeStrictness rest new)
@@ -50,19 +62,19 @@ injectBeforeStrictness (s@(CoreDoPasses more):rest) new = (CoreDoPasses $ inject
 injectBeforeStrictness (x:xs) new = x:(injectBeforeStrictness xs new)
 
 -- learnAndApply :: BanditProblem m a -> Float -> Float -> ModGuts -> CoreM ModGuts
-learnAndApply problemMk budget beta mg
+learnAndApply problemMk measure budget beta mg
     = do dflags <- getDynFlags
          let dflags' = dopt_set dflags Opt_D_dump_simpl_stats
          bestTape <- liftIO $ do
             start <- getCPUTime
-            initValue <- inliningPayoff mg dflags' []
+            initValue <- inliningPayoff mg dflags' measure []
             putStrLn $ "Initial payoff: " ++ show initValue
             endMeasure <- getCPUTime
             let secondsPerSimpl = (fromIntegral (endMeasure - start)) / 10 ^ 12
             putStrLn $ "Seconds per simplification: " ++ show secondsPerSimpl
             putStrLn $ "Will be done in: " ++ show (budget * secondsPerSimpl)
 
-            let problem = problemMk mg dflags'
+            let problem = problemMk mg dflags' measure
             tape <- findBest (ceiling budget) beta problem
             putStrLn $ "Using the tape: " ++ stringFromTape tape
             end <- getCPUTime

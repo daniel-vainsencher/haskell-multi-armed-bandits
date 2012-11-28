@@ -46,21 +46,21 @@ noes = False:noes
 tapeSetFromTape tape = [Just tape, Nothing , Nothing, Nothing]
 someTapes = tapeSetFromTape noes
 
-inliningProblem initGuts flags = BanditProblem {
-                   bpPlayAction = playTape initGuts flags,
+inliningProblem initGuts flags measure = BanditProblem {
+                   bpPlayAction = playTape initGuts flags measure,
                    bpRoot = [],
                    bpIsDeterministic = True}
 
-prestrictnessInliningProblem initGuts flags = BanditProblem {
-                   bpPlayAction = playTapeWithStrictness initGuts flags,
+prestrictnessInliningProblem initGuts flags measure = BanditProblem {
+                   bpPlayAction = playTapeWithStrictness initGuts flags measure,
                    bpRoot = [],
                    bpIsDeterministic = True}
 
 
-inliningPayoff :: ModGuts -> DynFlags -> [SearchTapeElement] -> IO Float
-inliningPayoff guts dflags tape =
+inliningPayoff :: ModGuts -> DynFlags -> (Tick->Float) -> [SearchTapeElement] -> IO Float
+inliningPayoff guts dflags measure tape =
     do (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
-       return $ scoreResults resGuts count
+       return $ scoreResults resGuts count measure
 
 
 -- Lifted from SimplCore
@@ -68,7 +68,7 @@ doPassM bind_f guts = do
     binds' <- bind_f (mg_binds guts)
     return (guts { mg_binds = binds' })
 
-playTapeWithStrictness guts dflags tape = do
+playTapeWithStrictness guts dflags measure tape = do
        startTime <- liftIO getCPUTime
        (guts1, count1, needMoreTape) <- tapeResults guts dflags tape
        guts2 <- (doPassM (dmdAnalPgm dflags)) guts1
@@ -83,11 +83,11 @@ playTapeWithStrictness guts dflags tape = do
                            ", tape: " ++ stringFromTape tape ++
                            if needMoreTape then "..." else "X"
 
-       return $ (scoreResults resGuts $ plusSimplCount count1 count2, actionList)
+       return $ (scoreResults resGuts (plusSimplCount count1 count2) measure, actionList)
 
 
-playTape :: ModGuts -> DynFlags -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
-playTape guts dflags tape = do
+-- playTape :: ModGuts -> DynFlags -> (Tick->Int) -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
+playTape guts dflags measure tape = do
        startTime <- liftIO getCPUTime
        (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
        endTime <- liftIO getCPUTime
@@ -100,26 +100,26 @@ playTape guts dflags tape = do
                            ", tape: " ++ stringFromTape tape ++
                            if needMoreTape then "..." else "X"
 
-       return $ (scoreResults resGuts count, actionList)
+       return $ (scoreResults resGuts count measure, actionList)
 
 main = work 1000 100
 
 work budget beta = do
   (guts0, dflags) <- example
   let dflags' = dopt_set dflags Opt_D_dump_simpl_stats
-  putStrLn $ show $ scoreResults guts0 $ zeroSimplCount dflags'
+  putStrLn $ show $ scoreResults guts0 (zeroSimplCount dflags') scoreATickSpeed
 
   let optFlags = updOptLevel 2 dflags
   gutsO <- pipeline guts0 optFlags
-  putStrLn $ show $ scoreResults gutsO $ zeroSimplCount dflags'
+  putStrLn $ show $ scoreResults gutsO (zeroSimplCount dflags') scoreATickSpeed
 
   -- putStrLn $ strFromGuts dflags gutsO
-  let problem = inliningProblem gutsO dflags'
+  let problem = inliningProblem gutsO dflags' scoreATickSpeed
   startbt <- initTree problem
   allResults <- runWithHistory budget beta problem startbt
   let tree = head $ reverse $ [c | (a,b,c) <- allResults]
   let bestTape = bnId $ bestNode problem tree
-  bestScore <- inliningPayoff gutsO dflags' bestTape
+  bestScore <- inliningPayoff gutsO dflags' scoreATickSpeed bestTape
   putStrLn $ show bestScore
   putStrLn $ stringFromTape bestTape
   return tree
@@ -146,8 +146,10 @@ pipeline guts flags = do
   optimizedGuts <- liftIO $ core2core hsc_env guts
   return optimizedGuts
 
+scoreATickSize a = case a of
+  otherwise -> 0
 
-scoreATick a = case a of
+scoreATickSpeed a = case a of
   DeadBindingElim _ -> 10
   KnownBranch _ -> 40
   RuleFired _ -> 100
@@ -156,10 +158,17 @@ scoreATick a = case a of
   BetaReduction _ -> 3
   otherwise -> 0
 
-scoreCounts cts = computeScore cts scoreATick
+scoreATickDebug a = case a of
+  DeadBindingElim _ -> 10
+  -- KnownBranch _ -> 40
+  -- RuleFired _ -> 100
+  -- PreInlineUnconditionally _ -> 10
+  -- EtaReduction _ -> 10
+  -- BetaReduction _ -> 3
+  otherwise -> 0
 
-scoreResults guts count
-  = scoreCounts count - (fromIntegral $ coreBindsSize $ mg_binds guts)
+scoreResults guts count measure
+  = computeScore count measure - (fromIntegral $ coreBindsSize $ mg_binds guts)
 
 countTapeDecisions (InSearchMode ToldYes) = 1
 countTapeDecisions (InSearchMode ToldNo) = 1
