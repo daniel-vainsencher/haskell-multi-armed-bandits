@@ -29,8 +29,8 @@ install [argstring] todo -- Expect argument to be a single string of form budget
                  budget = readFloat budgetS
                  measureList = read measureS :: [Float]
                  measure = customMeasure measureList
-                 stdAloneStage = CoreDoPluginPass "Learning simplification" $ learnAndApply inliningProblem measure budget 3 beta
-                 strWrapStage = CoreDoPluginPass "Learning simplification for strictness analysis" $ learnAndApply prestrictnessInliningProblem measure budget 3 beta
+                 stdAloneStage = CoreDoPluginPass "Learning simplification" $ learnAndApply inliningProblem measure budget 4 beta
+                 strWrapStage = CoreDoPluginPass "Learning simplification for strictness analysis" $ learnAndApply prestrictnessInliningProblem measure budget 4 beta
              in do reinitializeGlobals
                    dflags <- getDynFlags
                    liftIO $ putStrLn $ "total budget: " ++ show budget
