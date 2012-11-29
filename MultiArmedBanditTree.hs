@@ -24,6 +24,8 @@ instance Show Stats where
 -- |Stats for the empty sequence.
 emptyStats = OnlineMeanAndVariance {mvN = 0, mvX = 0, mvM2 = 0}
 
+singletonStat num = emptyStats `withEntry` num
+
 -- |Add a number to the sequence over which we maintain statistics.
 withEntry :: Stats -> Float -> Stats
 withEntry (OnlineMeanAndVariance {mvN = n, mvX = x, mvM2 = m2}) xNew =
