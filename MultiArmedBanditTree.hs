@@ -131,11 +131,12 @@ play (Bandits bandits) problem beta =
 --initTree :: BanditProblem m a -> m (BanditTree m a)
 initTree (BanditProblem playAction rootId _)
   = do (score, actions) <- playAction rootId
-       return BanditNode { bnStats = emptyStats
-               , bnOwnPayoff = score
-               , bnId = rootId
-               , bnSons = []
-               , bnUnvisitedSons = actions}
+       return (Just rootId, score
+              , BanditNode { bnStats = emptyStats
+                , bnOwnPayoff = score
+                , bnId = rootId
+                , bnSons = []
+                , bnUnvisitedSons = actions})
 
 --playFromTree :: Monad m => BanditProblem m a -> BanditTree m a -> Float -> Float
 --                        -> m (Maybe a, Float, BanditTree m a)
@@ -232,15 +233,12 @@ unfoldrMine f b  = do
 
 runWithHistory n beta problem startState = unfoldrMine simulationStep (n, startState, problem, beta, 0, 0)
 
-main = do startbt <- initTree twinPeaks
-          allResults <- runWithHistory 10 10 twinPeaks startbt
-          return allResults
-{-main = do startbt <- start
-          return (unfoldrMine unfoldablePlay startbt) -}
+main = findBest 10 10 twinPeaks
 
 findBest budget beta problem =
-    do startbt <- initTree problem
-       allResults <- runWithHistory budget beta problem startbt
-       let tree = head $ reverse $ [c | (a,b,c) <- allResults]
+    do res <- initTree problem -- Uses 1 run from the budget
+       let (_, _, startbt) = res
+       allResults <- runWithHistory (budget - 1) beta problem startbt
+       let tree = head $ reverse $ [c | (a,b,c) <- res : allResults]
        putStrLn $ show tree
        return $ bnId $ bestNode problem tree

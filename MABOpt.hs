@@ -115,14 +115,11 @@ work budget beta = do
 
   -- putStrLn $ strFromGuts dflags gutsO
   let problem = inliningProblem gutsO dflags' scoreATickSpeed
-  startbt <- initTree problem
-  allResults <- runWithHistory budget beta problem startbt
-  let tree = head $ reverse $ [c | (a,b,c) <- allResults]
-  let bestTape = bnId $ bestNode problem tree
+  bestTape <- findBest budget beta problem
   bestScore <- inliningPayoff gutsO dflags' scoreATickSpeed bestTape
   putStrLn $ show bestScore
   putStrLn $ stringFromTape bestTape
-  return tree
+  return bestTape
 
  
 stringFromTape (True:ts)  = 'y' : stringFromTape ts
