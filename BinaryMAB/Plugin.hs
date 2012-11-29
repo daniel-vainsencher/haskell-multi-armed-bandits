@@ -29,8 +29,8 @@ install [argstring] todo -- Expect argument to be a single string of form budget
                  budget = readFloat budgetS
                  measureList = read measureS :: [Float]
                  measure = customMeasure measureList
-                 stdAloneStage = CoreDoPluginPass "Learning simplification" $ learnAndApply inliningProblem measure budget beta
-                 strWrapStage = CoreDoPluginPass "Learning simplification for strictness analysis" $ learnAndApply prestrictnessInliningProblem measure budget beta
+                 stdAloneStage = CoreDoPluginPass "Learning simplification" $ learnAndApply inliningProblem measure budget 2 beta
+                 strWrapStage = CoreDoPluginPass "Learning simplification for strictness analysis" $ learnAndApply prestrictnessInliningProblem measure budget 2 beta
              in do reinitializeGlobals
                    dflags <- getDynFlags
                    liftIO $ putStrLn $ "total budget: " ++ show budget
@@ -62,7 +62,7 @@ injectBeforeStrictness (s@(CoreDoPasses more):rest) new = (CoreDoPasses $ inject
 injectBeforeStrictness (x:xs) new = x:(injectBeforeStrictness xs new)
 
 -- learnAndApply :: BanditProblem m a -> Float -> Float -> ModGuts -> CoreM ModGuts
-learnAndApply problemMk measure budget beta mg
+learnAndApply problemMk measure budget playBudget beta mg
     = do dflags <- getDynFlags
          let dflags' = dopt_set dflags Opt_D_dump_simpl_stats
          bestTape <- liftIO $ do
@@ -75,7 +75,7 @@ learnAndApply problemMk measure budget beta mg
             putStrLn $ "Will be done in: " ++ show (budget * secondsPerSimpl)
 
             let problem = problemMk mg dflags' measure
-            tape <- findBest (ceiling budget) beta problem
+            tape <- findBest budget beta problem $ Just playBudget
             putStrLn $ "Using the tape: " ++ stringFromTape tape
             end <- getCPUTime
             let secondsString = show $ (fromIntegral (end - start)) / 10 ^ 12

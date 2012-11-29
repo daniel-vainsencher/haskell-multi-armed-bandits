@@ -3,6 +3,7 @@ module MultiArmedBanditTree (runWithHistory, BanditProblem(..), initTree, bestNo
 import Data.List
 import Control.Monad.IO.Class
 import System.Random
+import Data.Maybe
 import Text.Printf
 import Text.PrettyPrint.HughesPJ
 --import Graphics.Rendering.Chart.Simple
@@ -132,11 +133,11 @@ play (Bandits bandits) problem beta =
 initTree (BanditProblem playAction rootId _)
   = do (score, actions) <- playAction rootId
        return (Just rootId, score
-              , BanditNode { bnStats = emptyStats
-                , bnOwnPayoff = score
-                , bnId = rootId
-                , bnSons = []
-                , bnUnvisitedSons = actions})
+              , BanditNode { bnStats = emptyStats `withEntry` score
+                           , bnOwnPayoff = score
+                           , bnId = rootId
+                           , bnSons = []
+                           , bnUnvisitedSons = actions})
 
 --playFromTree :: Monad m => BanditProblem m a -> BanditTree m a -> Float -> Float
 --                        -> m (Maybe a, Float, BanditTree m a)
@@ -145,7 +146,7 @@ initTree (BanditProblem playAction rootId _)
 
 -- First possibility: if we have unvisited nodes, and
 -- the visited nodes have had sufficient attention, get a new node.
-playFromTree (BanditProblem playAction _ _) (BanditNode stats ownPayoff id sons (xunvisited : xs)) beta scale
+playFromTree (BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id sons (xunvisited : xs)) beta scale
    | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
    = do let newState = xunvisited
         (newScore, newUnvisited) <- playAction newState
@@ -159,10 +160,13 @@ playFromTree (BanditProblem playAction _ _) (BanditNode stats ownPayoff id sons 
 -- least one visited son: visit a visited son.  If attention to
 -- visited hasn't been sufficient, and there is at least one visited
 -- son: visit a visited son.
-playFromTree problem (BanditNode stats ownPayoff id sons unvisited) beta scale
+playFromTree problem decisionBudget (BanditNode stats ownPayoff id sons unvisited) beta scale
   | not (null sons)   -- We need at least one son
-  = let (chosenSon, otherSons) = chosenAndRest sons bnStats beta scale  -- Pick son with highest upper bound
-    in do (actionM, newScore, updatedSon) <- playFromTree problem chosenSon beta scale
+  = let uStats = (if decisionBudget <= mvN stats
+                   then (withEntry emptyStats) . mvX -- past budget use empirical mean
+                   else \x->x) . bnStats -- else use full stats
+        (chosenSon, otherSons) = chosenAndRest sons uStats beta scale  -- Pick son with highest upper bound
+    in do (actionM, newScore, updatedSon) <- playFromTree problem decisionBudget chosenSon beta scale
           let updatedStats = stats `withEntry` newScore
           return (actionM, newScore, BanditNode updatedStats ownPayoff id (updatedSon : otherSons) unvisited)
 
@@ -171,7 +175,7 @@ playFromTree problem (BanditNode stats ownPayoff id sons unvisited) beta scale
 -- we can only play the current node. When feedback is deterministic,
 -- this is wasteful. When environment is random, we might grow more
 -- possible actions.
-playFromTree (BanditProblem playAction _ isDet) (BanditNode stats ownPayoff id [] []) beta scale =
+playFromTree (BanditProblem playAction _ isDet) decisionBudget (BanditNode stats ownPayoff id [] []) beta scale =
      do (newScore, nextActions) <- if isDet
           then return (ownPayoff, [])
           else playAction id
@@ -179,7 +183,7 @@ playFromTree (BanditProblem playAction _ isDet) (BanditNode stats ownPayoff id [
         let updatedStats = (stats `withEntry` newScore)
         return (actionM, newScore, BanditNode updatedStats ownPayoff id [] nextActions)
 
-playFromTree _ _ _ _ = error "Logic error in playFromTree: should not arrive here."
+playFromTree _ _ _ _ _ = error "Logic error in playFromTree: should not arrive here."
 
 ---------------------- Problem 1: bigger is better --------------------
 -- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
@@ -214,13 +218,13 @@ iterationResult n f a | n <= 0 = a
 
 -- problem = twinPeaks
 
-simulationStep (i, _, _, _, _, _)  | i == 0 = return Nothing
-simulationStep quin =
-        let (i, bt, problem, beta, minScore, maxScore) = quin
-        in do (a, s, nbs) <- playFromTree problem bt beta $ max 1 (maxScore - minScore)
+simulationStep (i, _, _, _, _, _, _)  | i == 0 = return Nothing
+simulationStep hextuple =
+        let (i, bt, problem, playBudget, beta, minScore, maxScore) = hextuple
+        in do (a, s, nbs) <- playFromTree problem playBudget bt beta $ max 1 (maxScore - minScore)
               let miS = min minScore s
                   maS = max maxScore s
-              return (Just ((a,s,nbs), (i-1, nbs, problem, beta, miS, maS)))
+              return (Just ((a,s,nbs), (i-1, nbs, problem, playBudget, beta, miS, maS)))
 
 -- Ended up equivalent to unfoldrM from Control.Monad.Loops in monad-loops, but that's not standard issue.
 unfoldrMine      :: Monad m => (tb -> m (Maybe (ta, tb))) -> tb -> m [ta]
@@ -231,14 +235,14 @@ unfoldrMine f b  = do
 			return (a : rest)
    Nothing        -> return []
 
-runWithHistory n beta problem startState = unfoldrMine simulationStep (n, startState, problem, beta, 0, 0)
+runWithHistory n beta problem playBudget startState = unfoldrMine simulationStep (n, startState, problem, playBudget, beta, 0, 0)
 
-main = findBest 10 10 twinPeaks
+main = findBest 10 10 twinPeaks Nothing
 
-findBest budget beta problem =
+findBest budget beta problem playBudgetM =
     do res <- initTree problem -- Uses 1 run from the budget
        let (_, _, startbt) = res
-       allResults <- runWithHistory (budget - 1) beta problem startbt
+       allResults <- runWithHistory (budget - 1) beta problem (fromMaybe (ceiling budget) playBudgetM) startbt
        let tree = head $ reverse $ [c | (a,b,c) <- res : allResults]
-       putStrLn $ show tree
+--       putStrLn $ show tree
        return $ bnId $ bestNode problem tree

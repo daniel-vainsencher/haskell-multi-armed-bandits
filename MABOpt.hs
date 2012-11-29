@@ -115,7 +115,7 @@ work budget beta = do
 
   -- putStrLn $ strFromGuts dflags gutsO
   let problem = inliningProblem gutsO dflags' scoreATickSpeed
-  bestTape <- findBest budget beta problem
+  bestTape <- findBest budget beta problem Nothing
   bestScore <- inliningPayoff gutsO dflags' scoreATickSpeed bestTape
   putStrLn $ show bestScore
   putStrLn $ stringFromTape bestTape
