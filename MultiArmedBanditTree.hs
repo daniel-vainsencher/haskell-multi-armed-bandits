@@ -106,7 +106,7 @@ maximalAndRestBy f (x:[]) = (x, [])
 maximalAndRestBy f (x:x':xs) =
     let rest = x':xs
         (largestInSuffix, restFromSuffix) = maximalAndRestBy f rest
-    in case (f x) > (f largestInSuffix) of
+    in case (f x) >= (f largestInSuffix) of
          True -> (x,rest)
          False -> (largestInSuffix, x:restFromSuffix)
 
@@ -163,8 +163,8 @@ playFromTree (BanditProblem playAction _ _) decisionBudget (BanditNode stats own
 playFromTree problem decisionBudget (BanditNode stats ownPayoff id sons unvisited) beta scale
   | not (null sons)   -- We need at least one son
   = let uStats = (if decisionBudget <= mvN stats
-                   then (withEntry emptyStats) . mvX -- past budget use empirical mean
-                   else \x->x) . bnStats -- else use full stats
+                   then (withEntry emptyStats) . fromIntegral . mvN -- past budget use most visited
+                   else \x->x) . bnStats  -- else use full stats
         (chosenSon, otherSons) = chosenAndRest sons uStats beta scale  -- Pick son with highest upper bound
     in do (actionM, newScore, updatedSon) <- playFromTree problem decisionBudget chosenSon beta scale
           let updatedStats = stats `withEntry` newScore
@@ -244,5 +244,5 @@ findBest budget beta problem playBudgetM =
        let (_, _, startbt) = res
        allResults <- runWithHistory (budget - 1) beta problem (fromMaybe (ceiling budget) playBudgetM) startbt
        let tree = head $ reverse $ [c | (a,b,c) <- res : allResults]
---       putStrLn $ show tree
+       putStrLn $ show tree
        return $ bnId $ bestNode problem tree
