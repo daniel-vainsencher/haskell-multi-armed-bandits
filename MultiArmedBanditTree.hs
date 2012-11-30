@@ -63,7 +63,7 @@ instance Show a => Show (BanditTree m a) where
   show bt = show $ prettyBanditTree bt
 
 prettyBanditTree (BanditNode bnStats bnOwnPayoff bnId bnSons bnUS)
-  = own $$ (nest 2 $ vcat sons)
+  = own $$ (nest 2 $ vcat $ reverse sons)
     where
        own = text $ show (bnStats, bnOwnPayoff, bnId)
        sons = map prettyBanditTree bnSons
