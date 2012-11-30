@@ -24,6 +24,8 @@ instance Show Stats where
 -- |Stats for the empty sequence.
 emptyStats = OnlineMeanAndVariance {mvN = 0, mvX = 0, mvM2 = 0}
 
+singletonStat val = emptyStats `withEntry` val
+
 -- |Add a number to the sequence over which we maintain statistics.
 withEntry :: Stats -> Float -> Stats
 withEntry (OnlineMeanAndVariance {mvN = n, mvX = x, mvM2 = m2}) xNew =
@@ -52,14 +54,14 @@ data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
 -----------------------  Generic code ---------------------------
 -- | Each bandit in a tree also keeps a list of nodes for visited reachable ids, and a list of ids to be visited. Note that here the Stats of a node include also visits to its children. 
-data BanditTree m a 
+data BanditTree a
   = BanditNode { bnStats :: Stats             -- Score at his node
                , bnOwnPayoff :: Float
-               , bnId :: a                    -- Game state at this node
-               , bnSons :: [BanditTree m a]
-               , bnUnvisitedSons :: [a] }
+               , bnId :: [a]                   -- Game state at this node
+               , bnSons :: [BanditTree a]
+               , bnUnvisitedSons :: [[a]] }
 
-instance Show a => Show (BanditTree m a) where
+instance Show a => Show (BanditTree a) where
   show bt = show $ prettyBanditTree bt
 
 prettyBanditTree (BanditNode bnStats bnOwnPayoff bnId bnSons bnUS)
@@ -71,8 +73,8 @@ prettyBanditTree (BanditNode bnStats bnOwnPayoff bnId bnSons bnUS)
 
 -- | bpPlayAction represents the environment (which gives rewards and
 -- next-actions). A deterministic environment is referentially transparent.
-data BanditProblem m a = BanditProblem { bpPlayAction   :: a -> m (Float, [a])
-                                       , bpRoot     :: a
+data BanditProblem m a = BanditProblem { bpPlayAction   :: a -> m (Float, [[a]])
+                                       , bpRoot     :: [a]
                                        , bpIsDeterministic :: Bool }
 
 --bestNode :: BanditProblem m a -> BanditTree m a -> BanditTree m a
@@ -118,6 +120,7 @@ chosenAndRest bandits toStats beta scale =
               maxUCB = maximum $ map currUCB bandits
           in maximalAndRestBy currUCB bandits
 
+{-
 -- |Play the UCB algorithm with a given history and problem, returning the updated history.
 play :: Monad m => UCBBandits a -> BanditProblem m a -> Float -> m (UCBBandits a)
 play (Bandits bandits) problem beta =
@@ -128,9 +131,10 @@ play (Bandits bandits) problem beta =
           (newScore, _) <- playAction chosenIdentity -- UCB does not deal with recursive structure.
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : otherArms))
-
---initTree :: BanditProblem m a -> m (BanditTree m a)
-initTree (BanditProblem playAction rootId _)
+-}
+initTree :: BanditProblem m a -> m (Maybe [a], Float, BanditTree a)
+initTree = undefined
+{-initTree (BanditProblem playAction rootId _)
   = do (score, actions) <- playAction rootId
        return (Just rootId, score
               , BanditNode { bnStats = emptyStats `withEntry` score
@@ -138,9 +142,84 @@ initTree (BanditProblem playAction rootId _)
                            , bnId = rootId
                            , bnSons = []
                            , bnUnvisitedSons = actions})
+-}
+data ActionNovelty = NewAction | SonFreeVisited Integer Float
 
---playFromTree :: Monad m => BanditProblem m a -> BanditTree m a -> Float -> Float
---                        -> m (Maybe a, Float, BanditTree m a)
+
+chooseActions :: BanditProblem m a -> Integer -> BanditTree a -> Float -> Float -> (ActionNovelty, [a])
+chooseActions (BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id sons (xunvisited : xs)) beta scale
+   | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
+   = (NewAction, xunvisited)
+
+chooseActions problem decisionBudget (BanditNode stats ownPayoff id sons unvisited) beta scale
+  | not (null sons)   -- We need at least one son
+  = let uStats = (if decisionBudget <= mvN stats
+                   then (withEntry emptyStats) . fromIntegral . mvN -- past budget use most visited
+                   else \x->x) . bnStats  -- else use full stats
+        (chosenSon, otherSons) = chosenAndRest sons uStats beta scale  -- Pick son with
+    in chooseActions problem decisionBudget chosenSon beta scale
+
+
+chooseActions (BanditProblem playAction _ isDet) decisionBudget (BanditNode stats ownPayoff id [] []) beta scale = (SonFreeVisited (mvN stats) ownPayoff, id)
+
+chooseActions _ _ _ _ _ = error "Logic error in chooseActions: should not arrive here."
+
+data Decision a = Decision {dPayoff :: Float, dActions :: Maybe [[a]]}
+
+interactWithProblem :: BanditProblem m a -> a -> ActionNovelty -> m (Decision a)
+interactWithProblem (BanditProblem {bpIsDeterministic = True})
+                    _
+                    (SonFreeVisited vis payoff)
+  = return $ Decision payoff Nothing
+
+interactWithProblem (BanditProblem {bpPlayAction = playAction
+                                   , bpIsDeterministic = True})
+                    action
+                    _
+  = do (payoff, actions) <- playAction action
+       return $ Decision payoff $ Just actions
+
+-- Possibilities:
+--   the action list describes the path to a node that exists (therefore runs out at a node).
+--   the action list describes the path to a node that needs to be created (therefore is a singleton at a node, and we must receive a list of its unvisited actions).
+--   we are not there yet; the first element in the list identifies where to proceed.
+
+updateTree :: BanditTree a -> [a] -> ActionNovelty -> Decision a -> Int -> BanditTree a
+
+updateTree old [] _ decision _
+  = old { bnStats = bnStats old `withEntry` dPayoff decision
+        , bnUnvisitedSons = fromMaybe [] $ dActions decision }
+
+-- Unchecked invariant: here act should be equal to first
+updateTree old@BanditNode { bnUnvisitedSons = first : rest}
+           [act]
+           _
+           (Decision payoff (Just actions))
+           _
+  = let newNode = BanditNode { bnStats = singletonStat $ payoff
+                             , bnOwnPayoff = payoff
+                             , bnId = bnId old ++ [act]
+                             , bnSons = []
+                             , bnUnvisitedSons = actions }
+    in old { bnStats = (bnStats old) `withEntry` payoff
+           , bnSons = newNode : bnSons old
+           , bnUnvisitedSons = rest }
+
+updateTree old actionList@(next:after:rest) an d depth
+  = let suffix = after:rest
+        (wrong, toUpdate:wrongAfter) = break (\s -> suffix == (drop depth $ bnId s)) $ bnSons old
+        updatedSon = updateTree toUpdate suffix an d $ depth - 1
+    in old { bnStats = (bnStats old) `withEntry` (dPayoff d)
+           , bnSons = toUpdate : (wrong ++ wrongAfter)}
+
+updateTree _ _ _ _ _ = error "logic error in updateTree, shouldn't get here."
+
+
+
+
+
+playFromTree :: Monad m => BanditProblem m a -> Integer -> BanditTree m a -> Float -> Float
+                        -> m (Maybe a, Float, BanditTree m a)
 -- A single iteration of main loop: 
 -- Returns (state after chosen move, its payoff, updated tree)
 
@@ -199,16 +278,16 @@ biggerIsBetter n = BanditProblem { bpPlayAction = \i -> return (i, bibHelper i n
 ---------------------- Problem 2: twinPeaks --------------------
 -- | A simple non concave problem testing UCT
 -- An infinitely-branching tree of possiblities
-twinPeaks :: BanditProblem IO Float
+{-twinPeaks :: BanditProblem IO Float
 twinPeaks = BanditProblem { bpPlayAction = twinHelper
-                          , bpRoot = 0
+                          , bpRoot = []
                           , bpIsDeterministic = False}
 
-twinHelper :: Float -> IO (Float, [Float])
-twinHelper x = do let payoff = - (min (abs (x+1)) (abs (x-1)))
-                  actions <- randomList x
-                  return (payoff, actions)
-
+twinHelper :: [Float] -> IO (Float, [Float])
+twinHelper [x] = do let payoff = - (min (abs (x+1)) (abs (x-1)))
+                    actions <- randomList x
+                    return (payoff, map (\x -> [x]) actions)
+-}
 randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
 
 -- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
@@ -237,12 +316,12 @@ unfoldrMine f b  = do
 
 runWithHistory n beta problem playBudget startState = unfoldrMine simulationStep (n, startState, problem, playBudget, beta, 0, 0)
 
-main = findBest 10 10 twinPeaks Nothing
+-- main = findBest 10 10 twinPeaks Nothing
 
 findBest budget beta problem playBudgetM =
-    do res <- initTree problem -- Uses 1 run from the budget
-       let (_, _, startbt) = res
+    do initRes <- initTree problem -- Uses 1 run from the budget
+       let (_, _, startbt) = initRes
        allResults <- runWithHistory (budget - 1) beta problem (fromMaybe (ceiling budget) playBudgetM) startbt
-       let tree = head $ reverse $ [c | (a,b,c) <- res : allResults]
+       let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
        putStrLn $ show tree
        return $ bnId $ bestNode problem tree
