@@ -4,6 +4,6 @@ build-type: Simple
 cabal-version: >= 1.2
 
 library
-  build-depends:   base, ghc, pretty, random, transformers, ghc-paths, containers, split
+  build-depends:   base, ghc, pretty, random, transformers, ghc-paths, containers, split, monad-loops
   other-modules:   MultiArmedBanditTree, MABOpt
   exposed-modules: BinaryMAB.Plugin
