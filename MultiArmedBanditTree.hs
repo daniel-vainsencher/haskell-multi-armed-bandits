@@ -181,10 +181,12 @@ interactWithProblem (BanditProblem {bpPlayAction = playAction
 
 -- Possibilities:
 --   the action list describes the path to a node that exists (therefore runs out at a node).
---   the action list describes the path to a node that needs to be created (therefore is a singleton at a node, and we must receive a list of its unvisited actions).
+--   the action list describes the path to a node that needs to be created
+--     (therefore is a singleton at a node with an unvisitedSon, and we must 
+--     receive a list of its unvisited actions).
 --   we are not there yet; the first element in the list identifies where to proceed.
 
-updateTree :: Eq a => BanditTree a -> [a] -> ActionNovelty -> Decision a -> Int -> BanditTree a
+updateTree :: (Show a, Eq a) => BanditTree a -> [a] -> ActionNovelty -> Decision a -> Int -> BanditTree a
 
 updateTree old [] _ decision _
   = old { bnStats = bnStats old `withEntry` dPayoff decision
@@ -205,14 +207,14 @@ updateTree old@BanditNode { bnUnvisitedSons = first : rest}
            , bnSons = newNode : bnSons old
            , bnUnvisitedSons = rest }
 
-updateTree old actionList@(next:after:rest) an d depth
-  = let suffix = after:rest
-        (wrong, toUpdate:wrongAfter) = break (\s -> next == head (drop depth $ bnId s)) $ bnSons old
+updateTree old actionList@(next:suffix) an d depth
+  = let (wrong, toUpdate:wrongAfter) = break (\s -> next == head (drop depth $ bnId s)) $ bnSons old
         updatedSon = updateTree toUpdate suffix an d $ depth + 1
     in old { bnStats = (bnStats old) `withEntry` (dPayoff d)
            , bnSons = updatedSon : (wrong ++ wrongAfter)}
 
-updateTree _ _ _ _ _ = error "logic error in updateTree, shouldn't get here."
+--updateTree a b c d e = error $  "logic error in updateTree, shouldn't get here." 
+--			     ++ show (a,b,c,d,e)
 
 
 {-playFromTreeStaged :: (Monad m, Eq a) => BanditProblem m a -> Integer -> BanditTree a
@@ -221,9 +223,9 @@ updateTree _ _ _ _ _ = error "logic error in updateTree, shouldn't get here."
 -}
 playFromTreeStaged problem decisionBudget node beta scale
   = do let (novelty, tape) = chooseActions problem decisionBudget node beta scale
-       putStrLn $ show (novelty,tape)
+       --putStrLn $ show (novelty,tape)
        decision@(Decision payoff _) <- interactWithProblem problem tape novelty
-       putStrLn $ show decision
+       --putStrLn $ show decision
        let newTree = updateTree node tape novelty decision 0
            (takenM, cost) = case novelty of
                              NewAction -> (Just tape, 1)
@@ -317,7 +319,7 @@ simulationStep (i, _, _, _, _, _, _)  | i == 0 = return Nothing
 simulationStep hextuple =
         let (i, bt, problem, playBudget, beta, minScore, maxScore) = hextuple
         in do (a, s, nbs) <- playFromTreeStaged problem playBudget bt beta $ max 1 (maxScore - minScore)
-	      putStrLn $ show i
+	      putStrLn $ show (i, length $ fromMaybe [] a, s)
               let miS = min minScore s
                   maS = max maxScore s
               return (Just ((a,s,nbs), (i-1, nbs, problem, playBudget, beta, miS, maS)))
@@ -331,7 +333,6 @@ unfoldrMine f b  = do
 			return $ a : rest
    Nothing        -> return []
 
---runWithHistory n beta problem playBudget startState = unfoldlMine simulationStep (n, startState, problem, playBudget, beta, 0, 0)
 runWithHistory n beta problem playBudget startState = unfoldrMine simulationStep (n, startState, problem, playBudget, beta, 0, 0)
 
 -- main = findBest 10 10 twinPeaks Nothing
@@ -341,5 +342,5 @@ findBest budget beta problem playBudgetM =
        let (_, _, startbt) = initRes
        allResults <- runWithHistory (budget - 1) beta problem (fromMaybe (ceiling budget) playBudgetM) startbt
        let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
-       putStrLn $ show tree
+       -- putStrLn $ show tree
        return $ bnId $ bestNode problem tree
