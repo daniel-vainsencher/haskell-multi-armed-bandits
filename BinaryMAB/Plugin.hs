@@ -70,10 +70,6 @@ learnAndApply problemMk measure budget playBudget beta mg
             initValue <- inliningPayoff mg dflags' measure ActionSeqEnd
             putStrLn $ "Initial payoff: " ++ show initValue
             endMeasure <- getCPUTime
-            let secondsPerSimpl = (fromIntegral (endMeasure - start)) / 10 ^ 12
-            putStrLn $ "Seconds per simplification: " ++ show secondsPerSimpl
-            putStrLn $ "Will be done in: " ++ show (budget * secondsPerSimpl)
-
             let problem = problemMk mg dflags' measure
             tape <- findBest budget beta problem $ Just playBudget
             putStrLn $ "Using the tape: " ++ (stringFromTape $ justActions tape)
