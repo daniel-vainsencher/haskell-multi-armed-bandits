@@ -67,7 +67,7 @@ learnAndApply problemMk measure budget playBudget beta mg
          let dflags' = dopt_set dflags Opt_D_dump_simpl_stats
          bestTape <- liftIO $ do
             start <- getCPUTime
-            initValue <- inliningPayoff mg dflags' measure []
+            initValue <- inliningPayoff mg dflags' measure ActionSeqEnd
             putStrLn $ "Initial payoff: " ++ show initValue
             endMeasure <- getCPUTime
             let secondsPerSimpl = (fromIntegral (endMeasure - start)) / 10 ^ 12
@@ -76,7 +76,7 @@ learnAndApply problemMk measure budget playBudget beta mg
 
             let problem = problemMk mg dflags' measure
             tape <- findBest budget beta problem $ Just playBudget
-            putStrLn $ "Using the tape: " ++ stringFromTape tape
+            putStrLn $ "Using the tape: " ++ (stringFromTape $ justActions tape)
             end <- getCPUTime
             let secondsString = show $ (fromIntegral (end - start)) / 10 ^ 12
             putStrLn $ "Done learning in (seconds): " ++ secondsString

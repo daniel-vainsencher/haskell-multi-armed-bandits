@@ -43,21 +43,20 @@ simpl_mode = SimplMode { sm_phase      = Phase 0
 todo tapes = CoreDoSimplify 4 tapes simpl_mode
 yesses = True:yesses
 noes = False:noes
-tapeSetFromTape tape = [Just tape, Nothing , Nothing, Nothing]
-someTapes = tapeSetFromTape noes
+tapeSetFromTape tape = [Just $ justActions tape, Nothing , Nothing, Nothing]
 
 inliningProblem initGuts flags measure = BanditProblem {
                    bpPlayAction = playTape initGuts flags measure,
-                   bpRoot = [],
+                   bpRoot = ActionSeqEnd,
                    bpIsDeterministic = True}
 
 prestrictnessInliningProblem initGuts flags measure = BanditProblem {
                    bpPlayAction = playTapeWithStrictness initGuts flags measure,
-                   bpRoot = [],
+                   bpRoot = ActionSeqEnd,
                    bpIsDeterministic = True}
 
 
-inliningPayoff :: ModGuts -> DynFlags -> (Tick->Float) -> [SearchTapeElement] -> IO Float
+inliningPayoff :: ModGuts -> DynFlags -> (Tick->Float) -> ActionSpec SearchTapeElement -> IO Float
 inliningPayoff guts dflags measure tape =
     do (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
        return $ scoreResults resGuts count measure
@@ -72,18 +71,19 @@ playTapeWithStrictness guts dflags measure tape = do
        startTime <- liftIO getCPUTime
        (guts1, count1, needMoreTape) <- tapeResults guts dflags tape
        guts2 <- (doPassM (dmdAnalPgm dflags)) guts1
-       (resGuts, count2, _ ) <- tapeResults guts2 dflags []
+       (resGuts, count2, _ ) <- tapeResults guts2 dflags ActionSeqEnd
        endTime <- liftIO getCPUTime
        let actionList = if needMoreTape
-              then [tape ++ [True], tape ++ [False]]
+              then [justActions tape ++ [True], justActions tape ++ [False]]
               else []
        let seconds = fromIntegral (endTime - startTime) / 10 ** 12
-       liftIO $ putStrLn $ "Tape length=" ++ show (length tape) ++
+       liftIO $ putStrLn $ "Tape length=" ++ show (length $ justActions tape) ++
                            ", seconds to run: " ++ show seconds ++
-                           ", tape: " ++ stringFromTape tape ++
+                           ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
 
-       return $ (scoreResults resGuts (plusSimplCount count1 count2) measure, actionList)
+       return $ Feedback (scoreResults resGuts (plusSimplCount count1 count2) measure)
+                         actionList
 
 
 -- playTape :: ModGuts -> DynFlags -> (Tick->Int) -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
@@ -92,15 +92,16 @@ playTape guts dflags measure tape = do
        (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
        endTime <- liftIO getCPUTime
        let actionList = if needMoreTape
-              then [tape ++ [True], tape ++ [False]]
+              then [justActions tape ++ [True], justActions tape ++ [False]]
               else []
        let seconds = fromIntegral (endTime - startTime) / 10 ** 12
-       liftIO $ putStrLn $ "Tape length=" ++ show (length tape) ++
+       liftIO $ putStrLn $ "Tape length=" ++ show (length $ justActions tape) ++
                            ", seconds to run: " ++ show seconds ++
-                           ", tape: " ++ stringFromTape tape ++
+                           ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
 
-       return $ (scoreResults resGuts count measure, actionList)
+       return $ Feedback (scoreResults resGuts count measure)
+                         actionList
 
 main = work 1000 100
 
@@ -118,7 +119,7 @@ work budget beta = do
   bestTape <- findBest budget beta problem Nothing
   bestScore <- inliningPayoff gutsO dflags' scoreATickSpeed bestTape
   putStrLn $ show bestScore
-  putStrLn $ stringFromTape bestTape
+  putStrLn $ stringFromTape $ justActions bestTape
   return bestTape
 
  
@@ -174,7 +175,7 @@ countTapeDecisions _ = 0
 tapeResults guts dflags tape
   = do (guts, counts) <- simplifyWithTapes guts dflags $ tapeSetFromTape tape
        let tapeEaten = computeScore counts countTapeDecisions
-           moreNeeded = tapeEaten > (fromIntegral $ length tape)
+           moreNeeded = tapeEaten > (fromIntegral $ length $ justActions tape)
        return (guts, counts, moreNeeded)
 
 -- showForTape :: [SimplMonad.SearchTapeElement] -> IO ()
