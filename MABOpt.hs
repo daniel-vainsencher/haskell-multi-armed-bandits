@@ -43,7 +43,7 @@ simpl_mode = SimplMode { sm_phase      = Phase 0
 todo tapes = CoreDoSimplify 4 tapes simpl_mode
 yesses = True:yesses
 noes = False:noes
-tapeSetFromTape tape = [Just $ justActions tape, Nothing , Nothing, Nothing]
+tapeSetFromTape tape = [Just tape, Nothing , Nothing, Nothing]
 
 inliningProblem initGuts flags measure = BanditProblem {
                    bpPlayAction = playTape initGuts flags measure,

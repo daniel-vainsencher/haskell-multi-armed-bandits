@@ -9,6 +9,7 @@ import Text.Printf
 import Text.PrettyPrint.HughesPJ
 --import Graphics.Rendering.Chart.Simple
 import GHC.Float
+import CoreMonad
 
 --------- This section is a utility for maintaining empirical mean and variance estimates without keeping all scores.
 -- |Sufficient information to calculate online mean and variance, see
@@ -65,24 +66,22 @@ data BanditTree a
 instance Show a => Show (BanditTree a) where
   show bt = show $ prettyBanditTree bt
 
+data Feedback a
+     = Feedback { --fbSubproblemFeedbacks :: [Feedback a]
+                fbPayoff :: Float
+                , fbActions :: [[a]]} deriving Show
 
-data ActionSpec a = ActionSpec { asAction :: a
-                               , asNext   :: (ActionSpec a)}
-                    | ActionSeqEnd deriving Show
-
-mkActionSpec (a:as) = ActionSpec a (mkActionSpec as)
+mkActionSpec (a:as) = ActionSpec {asAction = a, asNext = (mkActionSpec as), asSubproblems = []}
 mkActionSpec [] = ActionSeqEnd
 
-addAction ActionSeqEnd a = ActionSpec a ActionSeqEnd
-addAction (ActionSpec a rest) an = ActionSpec a (addAction rest an)
+addAction ActionSeqEnd a = ActionSpec {asAction = a, asNext = ActionSeqEnd, asSubproblems = []}
+addAction (ActionSpec {asAction = a, asNext = rest}) an
+          = let new = addAction rest an
+            in ActionSpec {asAction = a, asNext = new, asSubproblems = []}
 
 justActions :: ActionSpec a -> [a]
-justActions (ActionSpec a n) = a : justActions n
+justActions (ActionSpec {asAction = a, asNext = n}) = a : justActions n
 justActions ActionSeqEnd = []
-
-data Feedback a   = Feedback { fbPayoff :: Float
-                             , fbActions :: [[a]]} deriving Show
-
 
 prettyBanditTree (BanditNode bnStats bnOwnPayoff bnId bnSons bnUS)
   = own $$ (nest 2 $ vcat $ reverse sons)
@@ -195,7 +194,7 @@ interactWithProblem (BanditProblem {bpPlayAction = playAction
                                    , bpIsDeterministic = True})
                     action
                     _
-  = do Feedback payoff actions <- playAction action
+  = do Feedback {fbPayoff = payoff, fbActions = actions} <- playAction action
        return $ Decision payoff $ Just actions
 
 -- Possibilities:
@@ -213,7 +212,7 @@ updateTree old ActionSeqEnd _ decision _
 
 -- Unchecked invariant: here act should be equal to first
 updateTree old@BanditNode { bnUnvisitedSons = first : rest}
-           (ActionSpec act ActionSeqEnd)
+           (ActionSpec {asAction = act, asNext = ActionSeqEnd, asSubproblems = []})
            _
            (Decision payoff (Just actions))
            _
@@ -226,7 +225,7 @@ updateTree old@BanditNode { bnUnvisitedSons = first : rest}
            , bnSons = newNode : bnSons old
            , bnUnvisitedSons = rest }
 
-updateTree old actionList@(ActionSpec next suffix) an d depth
+updateTree old actionList@(ActionSpec {asAction = next, asNext = suffix, asSubproblems = []}) an d depth
   = let (wrong, toUpdate:wrongAfter) = break (\s -> next == head (drop depth $ bnId s)) $ bnSons old
         updatedSon = updateTree toUpdate suffix an d $ depth + 1
     in old { bnStats = (bnStats old) `withEntry` (dPayoff d)
@@ -276,9 +275,10 @@ twinPeaks = BanditProblem { bpPlayAction = twinHelper
                           , bpIsDeterministic = False}
 
 twinHelper :: ActionSpec Float -> IO (Feedback Float)
-twinHelper (ActionSpec x _) = do let payoff = - (min (abs (x+1)) (abs (x-1)))
-                                 actions <- randomList x
-                                 return $ Feedback payoff $ map (\x -> [x]) actions
+twinHelper (ActionSpec {asAction = x})
+           = do let payoff = - (min (abs (x+1)) (abs (x-1)))
+                actions <- randomList x
+                return $ Feedback payoff $ map (\x -> [x]) actions
 
 randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
 
