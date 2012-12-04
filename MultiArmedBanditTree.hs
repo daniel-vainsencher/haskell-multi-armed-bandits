@@ -233,51 +233,6 @@ playFromTreeStaged problem decisionBudget node beta scale
        -- putStrLn $ show newTree
        return (takenM, payoff, newTree)
 
-playFromTree :: Monad m => BanditProblem m a -> Integer -> BanditTree a -> Float -> Float
-                        -> m (Maybe [a], Float, BanditTree a)
--- A single iteration of main loop: 
--- Returns (state after chosen move, its payoff, updated tree)
-
--- First possibility: if we have unvisited nodes, and
--- the visited nodes have had sufficient attention, get a new node.
-playFromTree (BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id sons (xunvisited : xs)) beta scale
-   | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
-   = do let newState = xunvisited
-        (newScore, newUnvisited) <- playAction newState
-        let newStats = emptyStats `withEntry` newScore
-        let newNode = BanditNode newStats newScore newState [] newUnvisited
-        let updatedStats = (stats `withEntry` newScore)
-        return (Just newState, newScore, (BanditNode updatedStats ownPayoff id (newNode:sons) xs))
-
--- Second possiblity: go down an already-visited son
--- If there are no unvisited nodes, and there is at
--- least one visited son: visit a visited son.  If attention to
--- visited hasn't been sufficient, and there is at least one visited
--- son: visit a visited son.
-playFromTree problem decisionBudget (BanditNode stats ownPayoff id sons unvisited) beta scale
-  | not (null sons)   -- We need at least one son
-  = let uStats = (if decisionBudget <= mvN stats
-                   then (withEntry emptyStats) . fromIntegral . mvN -- past budget use most visited
-                   else \x->x) . bnStats  -- else use full stats
-        (chosenSon, otherSons) = chosenAndRest sons uStats beta scale  -- Pick son with highest upper bound
-    in do (actionM, newScore, updatedSon) <- playFromTree problem decisionBudget chosenSon beta scale
-          let updatedStats = stats `withEntry` newScore
-          return (actionM, newScore, BanditNode updatedStats ownPayoff id (updatedSon : otherSons) unvisited)
-
--- Third possibility: if we arrive here, there are no visited sons, and in particular, no
--- attention deficit, therefore there are no unvisited sons left. So
--- we can only play the current node. When feedback is deterministic,
--- this is wasteful. When environment is random, we might grow more
--- possible actions.
-playFromTree (BanditProblem playAction _ isDet) decisionBudget (BanditNode stats ownPayoff id [] []) beta scale =
-     do (newScore, nextActions) <- if isDet
-          then return (ownPayoff, [])
-          else playAction id
-        let actionM = if isDet then Nothing else Just id
-        let updatedStats = (stats `withEntry` newScore)
-        return (actionM, newScore, BanditNode updatedStats ownPayoff id [] nextActions)
-
-playFromTree _ _ _ _ _ = error "Logic error in playFromTree: should not arrive here."
 
 ---------------------- Problem 1: bigger is better --------------------
 -- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
@@ -307,11 +262,6 @@ twinHelper [x] = do let payoff = - (min (abs (x+1)) (abs (x-1)))
                     return (payoff, map (\x -> [x]) actions)
 
 randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
-
--- | f (f (f ... (f a) running f n times. Like unfold, without creating the list.
-iterationResult :: (Num a, Ord a) => a -> (t -> t) -> t -> t
-iterationResult n f a | n <= 0 = a
-                      | otherwise = iterationResult (n - 1) f (f a)
 
 -- problem = twinPeaks
 
