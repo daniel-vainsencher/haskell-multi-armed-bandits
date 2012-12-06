@@ -64,7 +64,8 @@ injectBeforeStrictness (x:xs) new = x:(injectBeforeStrictness xs new)
 -- learnAndApply :: BanditProblem m a -> Float -> Float -> ModGuts -> CoreM ModGuts
 learnAndApply problemMk measure budget playBudget beta mg
     = do dflags <- getDynFlags
-         let dflags' = dopt_set dflags Opt_D_dump_simpl_stats
+         let dflags'' = dopt_set dflags Opt_D_dump_simpl_stats
+             dflags'  = dopt_unset dflags'' Opt_D_verbose_core2core
          bestTape <- liftIO $ do
             start <- getCPUTime
             initValue <- inliningPayoff mg dflags' measure ActionSeqEnd
