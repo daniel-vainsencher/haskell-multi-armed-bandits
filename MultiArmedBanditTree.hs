@@ -1,5 +1,5 @@
 
-module MultiArmedBanditTree (runWithHistory, BanditProblem(..), initTree, bestNode, BanditTree(..), findBest, twinPeaks, ActionSpec(..), addAction, justActions, Feedback(..)) where
+module MultiArmedBanditTree (runWithHistory, BanditProblem(..), initTree, bestNode, BanditTree(..), findBest, twinPeaks, ActionSpec(..), addAction, justActions, BanditFeedback(..)) where
 import Data.List
 import Control.Monad.IO.Class
 import Control.Monad.Loops
@@ -66,8 +66,8 @@ data BanditTree a
 instance Show a => Show (BanditTree a) where
   show bt = show $ prettyBanditTree bt
 
-data Feedback a
-     = Feedback { --fbSubproblemFeedbacks :: [Feedback a]
+data BanditFeedback a
+     = BanditFeedback { --fbSubproblemFeedbacks :: [BanditFeedback a]
                 fbPayoff :: Float
                 , fbActions :: [[a]]} deriving Show
 
@@ -92,7 +92,7 @@ prettyBanditTree (BanditNode bnStats bnOwnPayoff bnId bnSons bnUS)
 
 -- | bpPlayAction represents the environment (which gives rewards and
 -- next-actions). A deterministic environment is referentially transparent.
-data BanditProblem m a = BanditProblem { bpPlayAction   :: ActionSpec a -> m (Feedback a)
+data BanditProblem m a = BanditProblem { bpPlayAction   :: ActionSpec a -> m (BanditFeedback a)
                                        , bpRoot     :: ActionSpec a
                                        , bpIsDeterministic :: Bool }
 
@@ -153,7 +153,7 @@ play (Bandits bandits) problem beta =
 -}
 initTree :: Monad m => BanditProblem m a -> m (Maybe (ActionSpec a), Float, BanditTree a)
 initTree (BanditProblem playAction rootId _)
-  = do Feedback {fbPayoff = score, fbActions = actions} <- playAction rootId
+  = do BanditFeedback {fbPayoff = score, fbActions = actions} <- playAction rootId
        return (Just rootId, score
               , BanditNode { bnStats = emptyStats `withEntry` score
                            , bnOwnPayoff = score
@@ -194,7 +194,7 @@ interactWithProblem (BanditProblem {bpPlayAction = playAction
                                    , bpIsDeterministic = True})
                     action
                     _
-  = do Feedback {fbPayoff = payoff, fbActions = actions} <- playAction action
+  = do BanditFeedback {fbPayoff = payoff, fbActions = actions} <- playAction action
        return $ Decision payoff $ Just actions
 
 -- Possibilities:
@@ -254,11 +254,11 @@ playFromTreeStaged problem decisionBudget node beta scale
 
 ---------------------- Problem 1: bigger is better --------------------
 -- | A trivial bandit problem: the payoff equals the identity, identities are some consecutive integers.
-bibPlayAction :: Monad m => Int -> ActionSpec Float -> m (Feedback Float)
+bibPlayAction :: Monad m => Int -> ActionSpec Float -> m (BanditFeedback Float)
 bibPlayAction n m
   = do return $ case justActions m of
-               [] -> Feedback 0 [ [fromInteger $ toInteger m] | m <- [1..n]]
-               [i] -> Feedback i []
+               [] -> BanditFeedback 0 [ [fromInteger $ toInteger m] | m <- [1..n]]
+               [i] -> BanditFeedback i []
                _ -> error "bigger is better is a one turn game."
 
 biggerIsBetter :: Int -> BanditProblem IO Float
@@ -274,11 +274,11 @@ twinPeaks = BanditProblem { bpPlayAction = twinHelper
                           , bpRoot = ActionSeqEnd
                           , bpIsDeterministic = False}
 
-twinHelper :: ActionSpec Float -> IO (Feedback Float)
+twinHelper :: ActionSpec Float -> IO (BanditFeedback Float)
 twinHelper (ActionSpec {asAction = x})
            = do let payoff = - (min (abs (x+1)) (abs (x-1)))
                 actions <- randomList x
-                return $ Feedback payoff $ map (\x -> [x]) actions
+                return $ BanditFeedback payoff $ map (\x -> [x]) actions
 
 randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
 

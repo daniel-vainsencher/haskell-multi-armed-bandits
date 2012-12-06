@@ -82,8 +82,8 @@ playTapeWithStrictness guts dflags measure tape = do
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
 
-       return $ Feedback (scoreResults resGuts (plusSimplCount count1 count2) measure)
-                         actionList
+       return $ BanditFeedback (scoreResults resGuts (plusSimplCount count1 count2) measure)
+                               actionList
 
 
 -- playTape :: ModGuts -> DynFlags -> (Tick->Int) -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
@@ -100,8 +100,8 @@ playTape guts dflags measure tape = do
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
 
-       return $ Feedback (scoreResults resGuts count measure)
-                         actionList
+       return $ BanditFeedback (scoreResults resGuts count measure)
+                               actionList
 
 main = work 1000 100
 
