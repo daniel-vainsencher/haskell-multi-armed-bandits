@@ -82,8 +82,9 @@ playTapeWithStrictness guts dflags measure tape = do
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
 
-       return $ BanditFeedback (scoreResults resGuts (plusSimplCount count1 count2) measure)
-                               actionList
+       return $ BanditFeedback { fbSubproblemFeedbacks = undefined
+                               , fbPayoff = (scoreResults resGuts (plusSimplCount count1 count2) measure)
+                               , fbActions = actionList}
 
 
 -- playTape :: ModGuts -> DynFlags -> (Tick->Int) -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
@@ -100,8 +101,9 @@ playTape guts dflags measure tape = do
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
 
-       return $ BanditFeedback (scoreResults resGuts count measure)
-                               actionList
+       return $ BanditFeedback { fbSubproblemFeedbacks = undefined
+                               , fbPayoff = scoreResults resGuts count measure
+                               , fbActions = actionList}
 
 main = work 1000 100
 
@@ -144,6 +146,9 @@ pipeline guts flags = do
   optimizedGuts <- liftIO $ core2core hsc_env guts
   return optimizedGuts
 
+newtype CountMeasure = Tick -> Float
+
+scoreATickSize CountMeasure
 scoreATickSize a = case a of
   otherwise -> 0
 
@@ -177,6 +182,13 @@ tapeResults guts dflags tape
        let tapeEaten = computeScore counts countTapeDecisions
            moreNeeded = any sfbMoreActions feedbacks
        return (guts, counts, moreNeeded)
+
+adaptSimplifierFeedback :: CountMeasure -> SimplifierFeedback -> ActionSpec -> BanditFeedback
+adaptSimplifierFeedback InProgressFeedback {sfbSubproblemFeedbacks = sf
+					   , sfbMoreActions = ma}
+  = BanditFeedback { fbSubproblemFeedbacks = reverse $ map adaptSimplifierFeedback sf
+		   , fbActions = 
+
 
 -- showForTape :: [SimplMonad.SearchTapeElement] -> IO ()
 {-showForTape tape =
