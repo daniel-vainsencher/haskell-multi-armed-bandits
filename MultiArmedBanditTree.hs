@@ -60,6 +60,7 @@ data BanditTree a
   = BanditNode { bnStats :: Stats             -- Score at his node
                , bnOwnPayoff :: Float
                , bnId :: [a]                   -- Game state at this node
+               , bnSubtrees :: [BanditTree a]
                , bnSons :: [BanditTree a]
                , bnUnvisitedSons :: [[a]] }
 
@@ -67,9 +68,9 @@ instance Show a => Show (BanditTree a) where
   show bt = show $ prettyBanditTree bt
 
 data BanditFeedback a
-     = BanditFeedback { --fbSubproblemFeedbacks :: [BanditFeedback a]
-                fbPayoff :: Float
-                , fbActions :: [[a]]} deriving Show
+     = BanditFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
+                      , fbPayoff :: Float
+                      , fbActions :: [[a]]} deriving Show
 
 mkActionSpec (a:as) = ActionSpec {asAction = a, asNext = (mkActionSpec as), asSubproblems = []}
 mkActionSpec [] = ActionSeqEnd
@@ -153,11 +154,12 @@ play (Bandits bandits) problem beta =
 -}
 initTree :: Monad m => BanditProblem m a -> m (Maybe (ActionSpec a), Float, BanditTree a)
 initTree (BanditProblem playAction rootId _)
-  = do BanditFeedback {fbPayoff = score, fbActions = actions} <- playAction rootId
+  = do BanditFeedback {fbPayoff = score, fbSubproblemFeedbacks = subfbs, fbActions = actions} <- playAction rootId
        return (Just rootId, score
               , BanditNode { bnStats = emptyStats `withEntry` score
                            , bnOwnPayoff = score
                            , bnId = justActions rootId
+                           , bnSubtrees = undefined
                            , bnSons = []
                            , bnUnvisitedSons = actions})
 
@@ -194,7 +196,7 @@ interactWithProblem (BanditProblem {bpPlayAction = playAction
                                    , bpIsDeterministic = True})
                     action
                     _
-  = do BanditFeedback {fbPayoff = payoff, fbActions = actions} <- playAction action
+  = do BanditFeedback {fbPayoff = payoff, fbSubproblemFeedbacks = subfb, fbActions = actions} <- playAction action
        return $ Decision payoff $ Just actions
 
 -- Possibilities:
