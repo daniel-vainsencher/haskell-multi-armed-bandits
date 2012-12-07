@@ -173,9 +173,9 @@ countTapeDecisions (InSearchMode ToldNo) = 1
 countTapeDecisions _ = 0
 
 tapeResults guts dflags tape
-  = do (guts, counts) <- simplifyWithTapes guts dflags $ tapeSetFromTape tape
+  = do ((guts, feedbacks), counts) <- simplifyWithTapes guts dflags $ tapeSetFromTape tape
        let tapeEaten = computeScore counts countTapeDecisions
-           moreNeeded = tapeEaten > (fromIntegral $ length $ justActions tape)
+           moreNeeded = any sfbMoreActions feedbacks
        return (guts, counts, moreNeeded)
 
 -- showForTape :: [SimplMonad.SearchTapeElement] -> IO ()
@@ -190,7 +190,7 @@ strFromGuts flags g = showSDoc flags $ ppr $ mg_binds g
 
 simplifyWithTapes
   :: MonadUtils.MonadIO m =>
-     ModGuts -> DynFlags -> [MTape] -> m (ModGuts, SimplCount)
+     ModGuts -> DynFlags -> [MTape] -> m ((ModGuts, [SimplifierFeedback]), SimplCount)
 simplifyWithTapes guts dflags tapes = do
         us <- liftIO $ mkSplitUniqSupply 's'
         hsc_env <- liftIO $ newHscEnv dflags

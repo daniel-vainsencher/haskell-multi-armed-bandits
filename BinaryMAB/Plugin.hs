@@ -78,5 +78,6 @@ learnAndApply problemMk measure budget playBudget beta mg
             let secondsString = show $ (fromIntegral (end - start)) / 10 ^ 12
             putStrLn $ "Done learning in (seconds): " ++ secondsString
             return tape
-         simplifyPgm (todo $ tapeSetFromTape bestTape) mg
+         (mgNew, _) <- simplifyPgm (todo $ tapeSetFromTape bestTape) mg
+         return mgNew
 
