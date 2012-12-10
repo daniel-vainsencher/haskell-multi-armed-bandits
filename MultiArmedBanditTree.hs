@@ -84,11 +84,16 @@ justActions :: ActionSpec a -> [a]
 justActions (ActionSpec {asAction = a, asNext = n}) = a : justActions n
 justActions ActionSeqEnd = []
 
-prettyBanditTree (BanditNode bnStats bnOwnPayoff bnId bnSons bnUS)
-  = own $$ (nest 2 $ vcat $ reverse sons)
+prettyBanditTree (BanditNode { bnStats = stats
+                             , bnOwnPayoff = ownPayoff
+                             , bnId = id
+                             , bnSons = sons
+                             , bnUnvisitedSons = unvisited
+                             , bnSubtrees = []})
+  = ownDoc $$ (nest 2 $ vcat $ reverse sonsDocs)
     where
-       own = text $ show (bnStats, bnOwnPayoff, bnId)
-       sons = map prettyBanditTree bnSons
+       ownDoc = text $ show (stats, ownPayoff, id)
+       sonsDocs = map prettyBanditTree sons
 
 
 -- | bpPlayAction represents the environment (which gives rewards and
@@ -167,11 +172,17 @@ data ActionNovelty = NewAction | SonFreeVisited Integer Float deriving Show
 
 
 chooseActions :: BanditProblem m a -> Integer -> BanditTree a -> Float -> Float -> (ActionNovelty, ActionSpec a)
-chooseActions (BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id sons (xunvisited : xs)) beta scale
+chooseActions (BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id subtrees sons (xunvisited : xs)) beta scale
    | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
    = (NewAction, mkActionSpec xunvisited)
 
-chooseActions problem decisionBudget (BanditNode stats ownPayoff id sons unvisited) beta scale
+chooseActions problem decisionBudget (BanditNode { bnStats = stats
+                                                 , bnOwnPayoff = ownPayoff
+                                                 , bnId = id
+                                                 , bnSons = sons
+                                                 , bnUnvisitedSons = unvisited
+                                                 , bnSubtrees = []}) 
+              beta scale
   | not (null sons)   -- We need at least one son
   = let uStats = (if decisionBudget <= mvN stats
                    then (withEntry emptyStats) . fromIntegral . mvN -- past budget use most visited
@@ -180,7 +191,15 @@ chooseActions problem decisionBudget (BanditNode stats ownPayoff id sons unvisit
     in chooseActions problem decisionBudget chosenSon beta scale
 
 
-chooseActions (BanditProblem playAction _ isDet) decisionBudget (BanditNode stats ownPayoff id [] []) beta scale = (SonFreeVisited (mvN stats) ownPayoff, mkActionSpec id)
+chooseActions (BanditProblem playAction _ isDet) 
+              decisionBudget 
+              (BanditNode { bnStats = stats
+                          , bnOwnPayoff = ownPayoff
+                          , bnId = id
+                          , bnSons = []
+                          , bnUnvisitedSons = []
+                          , bnSubtrees = []}) 
+              beta scale = (SonFreeVisited (mvN stats) ownPayoff, mkActionSpec id)
 
 chooseActions _ _ _ _ _ = error "Logic error in chooseActions: should not arrive here."
 
@@ -259,9 +278,15 @@ playFromTreeStaged problem decisionBudget node beta scale
 bibPlayAction :: Monad m => Int -> ActionSpec Float -> m (BanditFeedback Float)
 bibPlayAction n m
   = do return $ case justActions m of
-               [] -> BanditFeedback 0 [ [fromInteger $ toInteger m] | m <- [1..n]]
-               [i] -> BanditFeedback i []
-               _ -> error "bigger is better is a one turn game."
+        [] ->  BanditFeedback { fbPayoff = 0
+                             , fbActions = [ [fromInteger $ toInteger m] | m <- [1..n]]
+                             , fbSubproblemFeedbacks = undefined}
+
+        [i] -> BanditFeedback { fbPayoff = i
+                              , fbActions = []
+                              , fbSubproblemFeedbacks = undefined}
+
+        _ -> error "bigger is better is a one turn game."
 
 biggerIsBetter :: Int -> BanditProblem IO Float
 biggerIsBetter n = BanditProblem { bpPlayAction = bibPlayAction n
@@ -280,7 +305,9 @@ twinHelper :: ActionSpec Float -> IO (BanditFeedback Float)
 twinHelper (ActionSpec {asAction = x})
            = do let payoff = - (min (abs (x+1)) (abs (x-1)))
                 actions <- randomList x
-                return $ BanditFeedback payoff $ map (\x -> [x]) actions
+                return $ BanditFeedback { fbPayoff = payoff 
+                                        , fbActions = map (\x -> [x]) actions 
+                                        , fbSubproblemFeedbacks = undefined }
 
 randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
 

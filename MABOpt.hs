@@ -146,9 +146,9 @@ pipeline guts flags = do
   optimizedGuts <- liftIO $ core2core hsc_env guts
   return optimizedGuts
 
-newtype CountMeasure = Tick -> Float
+newtype CountMeasure = CountMeasure (Tick -> Float)
 
-scoreATickSize CountMeasure
+scoreATickSize :: Tick -> Float
 scoreATickSize a = case a of
   otherwise -> 0
 
@@ -183,11 +183,12 @@ tapeResults guts dflags tape
            moreNeeded = any sfbMoreActions feedbacks
        return (guts, counts, moreNeeded)
 
-adaptSimplifierFeedback :: CountMeasure -> SimplifierFeedback -> ActionSpec -> BanditFeedback
-adaptSimplifierFeedback InProgressFeedback {sfbSubproblemFeedbacks = sf
+adaptSimplifierFeedback :: CountMeasure -> SimplifierFeedback -> ActionSpec a -> BanditFeedback a
+adaptSimplifierFeedback (CountMeasure f) InProgressFeedback { sfbSubproblemFeedbacks = sf
 					   , sfbMoreActions = ma}
-  = BanditFeedback { fbSubproblemFeedbacks = reverse $ map adaptSimplifierFeedback sf
-		   , fbActions = 
+  = undefined
+{-BanditFeedback { fbSubproblemFeedbacks = reverse $ map adaptSimplifierFeedback sf
+		   , fbActions = -}
 
 
 -- showForTape :: [SimplMonad.SearchTapeElement] -> IO ()
