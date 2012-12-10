@@ -124,23 +124,10 @@ work budget beta = do
   putStrLn $ show bestScore
   putStrLn $ stringFromTape $ justActions bestTape
   return bestTape
-
  
 stringFromTape (True:ts)  = 'y' : stringFromTape ts
 stringFromTape (False:ts) = 'n' : stringFromTape ts
 stringFromTape []         = "N"
-
-  {-putStrLn "**********************************************"
-  (gutsN, countN) <- tapeResults gutsO dflags noes
-  printf "Score: %f\n" $ scoreResults gutsN countN
-  printf "%s\n" $ showSDoc dflags $ pprSimplCount countN
-  --putStrLn $ strFromGuts dflags gutsN
-  putStrLn "**********************************************"
-  (gutsY, countY) <- tapeResults gutsO dflags yesses
-  printf "Score: %f\n" $ scoreResults gutsY countY
-  printf "%s\n" $ showSDoc dflags $ pprSimplCount countY
-  putStrLn $ strFromGuts dflags gutsY -}
-
 
 pipeline guts flags = do
   hsc_env <- liftIO $ newHscEnv flags
@@ -212,14 +199,6 @@ adaptClosedFeedback cm sfb next actionSuffix
 	actions = action : actionSuffix
     in maybe (currentNode, actions) (\pr -> adaptClosedFeedback cm pr currentNode actions) $ sfbPrevious sfb
 
-
--- showForTape :: [SimplMonad.SearchTapeElement] -> IO ()
-{-showForTape tape =
-   do (guts,counts,dflags) <- tapeResults tape
-      --putStrLn $ strFromGuts dflags guts -- Large
-      putStrLn $ showSDoc dflags $ pprSimplCount counts --print the counts: currently shows us only a total!
-      putStrLn $ show $ coreBindsSize $ mg_binds guts -- print the total size of the bindings.
--}
 strFromGuts :: DynFlags -> ModGuts -> String
 strFromGuts flags g = showSDoc flags $ ppr $ mg_binds g
 
