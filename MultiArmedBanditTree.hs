@@ -223,8 +223,12 @@ interactWithProblem (BanditProblem {bpPlayAction = playAction
        return $ Decision payoff $ Just actions
 
 
-updateTrees :: [BanditTree a] -> [BanditFeedback a] -> [BanditTree a]
-updateTrees = undefined -- map (snd . (\t -> updateTree t))}
+updateTrees :: (Show a, Eq a) => [BanditTree a] -> [BanditFeedback a] -> [BanditTree a]
+updateTrees bts bfs 
+  = if length bts /= length bfs 
+       then error "Subproblem list length inconsistent between feedback and tree." 
+       else let (_, trees) = unzip [updateTree2 t fb 0 | (t, fb) <- zip bts bfs]
+	    in trees
 
 treeMaker bf
   = BanditNode { bnStats = singletonStat $ fbPayoff bf
