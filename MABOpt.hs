@@ -98,7 +98,7 @@ playTapeWithStrictness guts dflags measure tape = do
                            if needMoreTape then "..." else "X"
        let size = sizeGuts resGuts
 	   counts = plusSimplCount count1 count2
-	   completeSFeedback = closeFeedback counts size feedback
+	   completeSFeedback = completeFeedback counts size feedback
        return $ adaptCompleteFeedback measure completeSFeedback 
 
 
@@ -119,7 +119,7 @@ playTape guts dflags measure tape = do
                            if needMoreTape then "..." else "X"
 
        let size = sizeGuts resGuts
-	   completeSFeedback = closeFeedback count size feedback
+	   completeSFeedback = completeFeedback count size feedback
        return $ adaptCompleteFeedback measure completeSFeedback 
 
 main = work 1000 100
