@@ -55,7 +55,7 @@ prestrictnessInliningProblem initGuts flags measure = BanditProblem {
                    bpIsDeterministic = True}
 
 
-inliningPayoff :: ModGuts -> DynFlags -> CountMeasure -> ActionSpec SearchTapeElement -> IO Float
+-- inliningPayoff :: ModGuts -> DynFlags -> CountMeasure -> ActionSpec SearchTapeElement -> IO Float
 inliningPayoff guts dflags measure tape =
     do (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
        return $ scoreResults resGuts count measure
@@ -81,6 +81,7 @@ doPassM bind_f guts = do
     binds' <- bind_f (mg_binds guts)
     return (guts { mg_binds = binds' })
 
+-- playTapeWithStrictness :: ModGuts -> DynFlags -> CountMeasure -> ActionSpec Bool -> IO (BanditFeedback Bool)
 playTapeWithStrictness guts dflags measure tape = do
        startTime <- liftIO getCPUTime
        (guts1, count1, feedback) <- tapeResults guts dflags tape

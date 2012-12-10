@@ -87,8 +87,8 @@ addAction (ActionSpec {asAction = a, asNext = rest}) an
             in ActionSpec {asAction = a, asNext = new, asSubproblems = []}
 
 justActions :: ActionSpec a -> [a]
-justActions (ActionSpec {asAction = a, asNext = n}) = a : justActions n
-justActions ActionSeqEnd = []
+justActions (ActionSpec {asAction = Just a, asNext = n}) = a : justActions n
+justActions _ = []
 
 prettyBanditTree (BanditNode { bnStats = stats
                              , bnOwnPayoff = ownPayoff
@@ -120,7 +120,21 @@ bestNode bp@(BanditProblem {bpIsDeterministic = isDet})
         (best, rest) = maximalAndRestBy measure $ map (bestNode bp) sons
     in best
 
-bestActionSpec bp t = mkActionSpec $ bnId $ bestNode bp t
+bestActionSpec :: BanditProblem m a -> BanditTree a -> ActionSpec a
+bestActionSpec bp t@BanditNode { bnId = id
+			       , bnSubtrees = subtrees
+			       , bnSons = [] }
+ = ActionSpec {asAction = Just $ last id, asNext = ActionSeqEnd, asSubproblems = map (bestActionSpec bp) subtrees }
+
+bestActionSpec bp@(BanditProblem {bpIsDeterministic = isDet})
+	       t@BanditNode { bnId = id
+			    , bnSubtrees = subtrees
+			    , bnSons = sons }
+ = let measure = if isDet
+                       then bnOwnPayoff
+                       else (mean . bnStats)
+       (best, rest) = maximalAndRestBy measure $ map (bestNode bp) sons
+    in ActionSpec {asAction = Just $ last $ bnId best, asNext = ActionSeqEnd, asSubproblems = map (bestActionSpec bp) subtrees }
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
@@ -178,38 +192,60 @@ initTree (BanditProblem playAction rootId _)
 
 data ActionNovelty = NewAction | SonFreeVisited Integer Float deriving Show
 
-
-chooseActions :: BanditProblem m a -> Integer -> BanditTree a -> Float -> Float -> (ActionNovelty, ActionSpec a)
-chooseActions (BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id subtrees sons (xunvisited : xs)) beta scale
+-- Some unvisited son, and no lack of attention to visited: visit the new.
+chooseActions :: BanditProblem m a -> Integer -> BanditTree a -> Float -> Float -> Int -> (ActionNovelty, ActionSpec a)
+chooseActions bp@(BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id subtrees sons (xunvisited : xs)) beta scale depth
    | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
-   = (NewAction, mkActionSpec xunvisited)
+   = let new = ActionSpec {asAction = Just $ head $ drop depth xunvisited 
+			  , asNext = ActionSeqEnd
+			  , asSubproblems = 
+			      map (\sp -> snd $ chooseActions bp decisionBudget 
+							      sp beta scale 0) 
+				  subtrees }
+     in (NewAction, new)
 
-chooseActions problem decisionBudget (BanditNode { bnStats = stats
-                                                 , bnOwnPayoff = ownPayoff
-                                                 , bnId = id
-                                                 , bnSons = sons
-                                                 , bnUnvisitedSons = unvisited
-                                                 , bnSubtrees = []}) 
-              beta scale
+-- Visit existing son.
+chooseActions bp decisionBudget (BanditNode { bnStats = stats
+					    , bnOwnPayoff = ownPayoff
+                                            , bnId = id
+                                            , bnSons = sons
+                                            , bnUnvisitedSons = unvisited
+                                            , bnSubtrees = subtrees}) 
+              beta scale depth 
   | not (null sons)   -- We need at least one son
   = let uStats = (if decisionBudget <= mvN stats
                    then (withEntry emptyStats) . fromIntegral . mvN -- past budget use most visited
                    else \x->x) . bnStats  -- else use full stats
         (chosenSon, otherSons) = chosenAndRest sons uStats beta scale  -- Pick son with
-    in chooseActions problem decisionBudget chosenSon beta scale
+	(novelty, sonAct) = chooseActions bp decisionBudget chosenSon 
+					  beta scale $ depth + 1
+	own = ActionSpec { asAction = Just $ head $ drop depth $ bnId chosenSon 
+			 , asNext = sonAct
+			 , asSubproblems = 
+			     map (\sp -> snd $ chooseActions bp decisionBudget 
+							     sp beta scale 0)
+				 subtrees }
+    in (novelty, own)
 
-
-chooseActions (BanditProblem playAction _ isDet) 
+-- No sons, visited or otherwise: must play self.
+chooseActions bp@ (BanditProblem playAction _ isDet) 
               decisionBudget 
               (BanditNode { bnStats = stats
                           , bnOwnPayoff = ownPayoff
                           , bnId = id
                           , bnSons = []
                           , bnUnvisitedSons = []
-                          , bnSubtrees = []}) 
-              beta scale = (SonFreeVisited (mvN stats) ownPayoff, mkActionSpec id)
+                          , bnSubtrees = subtrees}) 
+              beta scale depth
+  = (SonFreeVisited (mvN stats) ownPayoff
+    , ActionSpec { asAction = Nothing 
+		 , asNext = ActionSeqEnd
+		 , asSubproblems = map (\sp -> snd $ chooseActions bp decisionBudget 
+								   sp beta scale 0)
+				       subtrees })
 
-chooseActions _ _ _ _ _ = error "Logic error in chooseActions: should not arrive here."
+
+chooseActions _ _ _ _ _ _ = error "Logic error in chooseActions: should not arrive here."
 
 data Decision a = Decision {dPayoff :: Float, dActions :: Maybe [[a]]} deriving Show
 
@@ -281,7 +317,7 @@ updateTree2 node feedback depth = error $ "Should not get here. " ++ show node +
                       -> m (Maybe [a], Float, BanditTree a)
 -}
 playFromTreeStaged problem decisionBudget node beta scale
-  = do let (novelty, tape) = chooseActions problem decisionBudget node beta scale
+  = do let (novelty, tape) = chooseActions problem decisionBudget node beta scale 0
        putStrLn $ "Got tape: " ++ show tape
        feedback <- bpPlayAction problem tape
        putStrLn $ "Going to update " ++ show node ++ " with feedback " ++ show feedback
@@ -319,28 +355,31 @@ twinPeaks = BanditProblem { bpPlayAction = twinHelper
                           , bpIsDeterministic = False}
 
 twinHelper :: ActionSpec Float -> IO (BanditFeedback Float)
-twinHelper (ActionSpec {asAction = x})
+twinHelper (ActionSpec {asAction = Just x})
            = do let payoff = - (min (abs (x+1)) (abs (x-1)))
                 actions <- randomList x
                 return $ BanditFeedback { fbPayoff = payoff 
                                         , fbActions = map (\x -> [x]) actions 
                                         , fbSubproblemFeedbacks = [] }
-
+twinHelper _ = undefined 
 randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
 
 -- problem = twinPeaks
 
+{-simulationStep :: (Int, BanditTree a, BanditProblem m a, Integer, Float, Float, Float) 
+		  -> Maybe ((ActionSpec a, Float, BanditTree a), 
+			    (Int, BanditTree a, BanditProblem m a, Integer, Float, Float, Float)) -}
 simulationStep (i, _, _, _, _, _, _)  | i == 0 = return Nothing
 simulationStep hextuple =
         let (i, bt, problem, playBudget, beta, minScore, maxScore) = hextuple
         in do (a, s, nbs) <- playFromTreeStaged problem playBudget bt beta $ max 1 (maxScore - minScore)
-              putStrLn $ show (i, length $ justActions a, s)
+              liftIO $ putStrLn $ show (i, length $ justActions a, s)
               let miS = min minScore s
                   maS = max maxScore s
-              return (Just ((a,s,nbs), (i-1, nbs, problem, playBudget, beta, miS, maS)))
+              return $ Just ((a,s,nbs), (i-1, nbs, problem, playBudget, beta, miS, maS))
 
 -- Ended up equivalent to unfoldrM from Control.Monad.Loops in monad-loops, but that's not standard issue.
--- unfoldrMine      :: (MonadIO m, Show tb, Show ta) => (tb -> m (Maybe (ta, tb))) -> tb -> m [ta]
+--unfoldrMine      :: (MonadIO m, Show tb, Show ta) => (tb -> m (Maybe (ta, tb))) -> tb -> m [ta]
 unfoldrMine f b  = do
   x <- f b 
   case x of
@@ -348,14 +387,16 @@ unfoldrMine f b  = do
 			return $ a : rest
    Nothing        -> return []
 
+-- runWithHistory :: MonadIO m => Float -> Float -> BanditProblem m a -> Integer -> BanditTree a -> m ([(ActionSpec a, Float, BanditTree a)])
 runWithHistory n beta problem playBudget startState = unfoldrMine simulationStep (n, startState, problem, playBudget, beta, 0, 0)
 
 -- main = findBest 10 10 twinPeaks Nothing
 
+-- findBest :: (Show a, MonadIO m) => Float -> Float -> BanditProblem m a -> Maybe Integer -> m (ActionSpec a)
 findBest budget beta problem playBudgetM =
-    do hSetBuffering stdout NoBuffering
-       hSetBuffering stderr NoBuffering
-       putStrLn $ "Entered findBest with budget, beta: " ++ show (budget, beta)
+    do liftIO $ do hSetBuffering stdout NoBuffering
+		   hSetBuffering stderr NoBuffering
+		   putStrLn $ "Entered findBest with budget, beta: " ++ show (budget, beta)
        initRes <- initTree problem -- Uses 1 run from the budget
        let (_, _, startbt) = initRes
        allResults <- runWithHistory (budget - 1) beta problem (fromMaybe (ceiling budget) playBudgetM) startbt
