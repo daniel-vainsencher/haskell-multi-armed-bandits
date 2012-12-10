@@ -13,6 +13,7 @@ import Data.Maybe
 import MonadUtils
 import CoreMonad
 import SimplMonad
+import SimplMonad
 import BasicTypes
 import SimplCore
 import DmdAnal          ( dmdAnalPgm )
@@ -59,6 +60,21 @@ inliningPayoff guts dflags measure tape =
     do (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
        return $ scoreResults resGuts count measure
 
+instance Show SimplifierFeedback where
+  show CompleteSFeedback { sfbSubproblemFeedbacks = sf
+                         , sfbSimplCounts = _ 
+                         , sfbExprSize = size
+                         , sfbMoreActions = more
+                         , sfbPrevious = prev}
+    = show ("Comp", length sf, size, more, prev)
+  show InProgressSFeedback { sfbSubproblemFeedbacks = sf
+                           , sfbMoreActions = more
+                           , sfbPrevious = prev}
+    = show ("IP", length sf, more, prev)
+  show ClosedSFeedback { sfbSubproblemFeedbacks = sf
+                       , sfbActionTaken = taken
+                       , sfbPrevious = prev}
+    = show ("Cl", length sf, taken, prev)
 
 -- Lifted from SimplCore
 doPassM bind_f guts = do
@@ -90,6 +106,7 @@ playTapeWithStrictness guts dflags measure tape = do
 playTape guts dflags measure tape = do
        startTime <- liftIO getCPUTime
        (resGuts, count, feedback) <- tapeResults guts dflags tape
+       putStrLn $ "Got simplifier feedback " ++ show feedback
        let needMoreTape = sfbMoreActions feedback
        endTime <- liftIO getCPUTime
        let actionList = if needMoreTape
@@ -169,7 +186,8 @@ countTapeDecisions _ = 0
 
 tapeResults guts dflags tape
   = do ((guts, feedbacks), counts) <- simplifyWithTapes guts dflags $ tapeSetFromTape tape
-       return (guts, counts, last feedbacks)
+       liftIO $ putStrLn $ "got feedbacks:" ++ show feedbacks
+       return (guts, counts, head feedbacks)
 
 
 adaptCompleteFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool

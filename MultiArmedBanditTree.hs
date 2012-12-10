@@ -9,7 +9,9 @@ import Text.Printf
 import Text.PrettyPrint.HughesPJ
 --import Graphics.Rendering.Chart.Simple
 import GHC.Float
-import CoreMonad
+import CoreMonad hiding (liftIO)
+import SimplMonad
+import System.IO
 
 --------- This section is a utility for maintaining empirical mean and variance estimates without keeping all scores.
 -- |Sufficient information to calculate online mean and variance, see
@@ -94,10 +96,11 @@ prettyBanditTree (BanditNode { bnStats = stats
                              , bnSons = sons
                              , bnUnvisitedSons = unvisited
                              , bnSubtrees = []})
-  = ownDoc $$ (nest 2 $ vcat $ reverse sonsDocs)
+  = ownDoc $$ unvisDocs $$ (nest 2 $ vcat $ reverse sonsDocs)
     where
        ownDoc = text $ show (stats, ownPayoff, id)
        sonsDocs = map prettyBanditTree sons
+       unvisDocs = hcat $ map (text . show) unvisited
 
 
 -- | bpPlayAction represents the environment (which gives rewards and
@@ -161,9 +164,10 @@ play (Bandits bandits) problem beta =
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : otherArms))
 -}
-initTree :: Monad m => BanditProblem m a -> m (ActionSpec a, Float, BanditTree a)
+initTree :: (MonadIO m, Show a) => BanditProblem m a -> m (ActionSpec a, Float, BanditTree a)
 initTree (BanditProblem playAction rootId _)
   = do BanditFeedback {fbPayoff = score, fbSubproblemFeedbacks = subfbs, fbActions = actions} <- playAction rootId
+       liftIO $ putStrLn $ "Init action got score and further actions:" ++ show (score, actions)
        return (rootId, score
               , BanditNode { bnStats = emptyStats `withEntry` score
                            , bnOwnPayoff = score
@@ -270,6 +274,7 @@ updateTree2 old bsf@BanditSubFeedback {} depth
     in (po, newNode)
 
 -- Other options should not happen.
+updateTree2 node feedback depth = error $ "Should not get here. " ++ show node ++ show feedback ++ show depth
 
 {-playFromTreeStaged :: (Monad m, Eq a) => BanditProblem m a -> Integer -> BanditTree a
                       -> Float -> Float
@@ -277,12 +282,11 @@ updateTree2 old bsf@BanditSubFeedback {} depth
 -}
 playFromTreeStaged problem decisionBudget node beta scale
   = do let (novelty, tape) = chooseActions problem decisionBudget node beta scale
-       --putStrLn $ show (novelty,tape)
-       decision@(Decision payoff _) <- interactWithProblem problem tape novelty
+       putStrLn $ "Got tape: " ++ show tape
        feedback <- bpPlayAction problem tape
-       --putStrLn $ show decision
+       putStrLn $ "Going to update " ++ show node ++ " with feedback " ++ show feedback
        let (payoff, newTree) = updateTree2 node feedback 0
-       -- putStrLn $ show newTree
+       putStrLn $ "Updated tree:" ++ show newTree
        return (tape, payoff, newTree)
 
 
@@ -349,7 +353,10 @@ runWithHistory n beta problem playBudget startState = unfoldrMine simulationStep
 -- main = findBest 10 10 twinPeaks Nothing
 
 findBest budget beta problem playBudgetM =
-    do initRes <- initTree problem -- Uses 1 run from the budget
+    do hSetBuffering stdout NoBuffering
+       hSetBuffering stderr NoBuffering
+       putStrLn $ "Entered findBest with budget, beta: " ++ show (budget, beta)
+       initRes <- initTree problem -- Uses 1 run from the budget
        let (_, _, startbt) = initRes
        allResults <- runWithHistory (budget - 1) beta problem (fromMaybe (ceiling budget) playBudgetM) startbt
        let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
