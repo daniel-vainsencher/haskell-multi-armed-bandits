@@ -1,5 +1,5 @@
 --invoke: ghci -package ghc Driver.hs
-module MABOpt (findBest, inliningProblem, prestrictnessInliningProblem, tapeSetFromTape, todo, stringFromTape, work, inliningPayoff) where
+module MABOpt (findBest, inliningProblem, prestrictnessInliningProblem, tapeSetFromTape, todo, stringFromTape, work, inliningPayoff, CountMeasure(..)) where
 
 import GHC
 import Outputable
@@ -28,8 +28,6 @@ import DynFlags
 
 import System.CPUTime
 
--- libdir :: FilePath
--- libdir = "/home/t-davain/ghc-work/inplace/lib"
 targetName = "Main"
 targetFile = "/home/t-davain/ghc-work/nofib/imaginary/integrate/" ++ targetName ++ ".hs"
 
@@ -56,7 +54,7 @@ prestrictnessInliningProblem initGuts flags measure = BanditProblem {
                    bpIsDeterministic = True}
 
 
-inliningPayoff :: ModGuts -> DynFlags -> (Tick->Float) -> ActionSpec SearchTapeElement -> IO Float
+inliningPayoff :: ModGuts -> DynFlags -> CountMeasure -> ActionSpec SearchTapeElement -> IO Float
 inliningPayoff guts dflags measure tape =
     do (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
        return $ scoreResults resGuts count measure
@@ -69,7 +67,8 @@ doPassM bind_f guts = do
 
 playTapeWithStrictness guts dflags measure tape = do
        startTime <- liftIO getCPUTime
-       (guts1, count1, needMoreTape) <- tapeResults guts dflags tape
+       (guts1, count1, feedback) <- tapeResults guts dflags tape
+       let needMoreTape = sfbMoreActions feedback
        guts2 <- (doPassM (dmdAnalPgm dflags)) guts1
        (resGuts, count2, _ ) <- tapeResults guts2 dflags ActionSeqEnd
        endTime <- liftIO getCPUTime
@@ -81,16 +80,17 @@ playTapeWithStrictness guts dflags measure tape = do
                            ", seconds to run: " ++ show seconds ++
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
-
-       return $ BanditFeedback { fbSubproblemFeedbacks = undefined
-                               , fbPayoff = (scoreResults resGuts (plusSimplCount count1 count2) measure)
-                               , fbActions = actionList}
+       let size = sizeGuts resGuts
+	   counts = plusSimplCount count1 count2
+	   completeSFeedback = closeFeedback counts size feedback
+       return $ adaptCompleteFeedback measure completeSFeedback 
 
 
 -- playTape :: ModGuts -> DynFlags -> (Tick->Int) -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
 playTape guts dflags measure tape = do
        startTime <- liftIO getCPUTime
-       (resGuts, count, needMoreTape) <- tapeResults guts dflags tape
+       (resGuts, count, feedback) <- tapeResults guts dflags tape
+       let needMoreTape = sfbMoreActions feedback
        endTime <- liftIO getCPUTime
        let actionList = if needMoreTape
               then [justActions tape ++ [True], justActions tape ++ [False]]
@@ -101,25 +101,26 @@ playTape guts dflags measure tape = do
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
 
-       return $ BanditFeedback { fbSubproblemFeedbacks = undefined
-                               , fbPayoff = scoreResults resGuts count measure
-                               , fbActions = actionList}
+       let size = sizeGuts resGuts
+	   completeSFeedback = closeFeedback count size feedback
+       return $ adaptCompleteFeedback measure completeSFeedback 
 
 main = work 1000 100
 
 work budget beta = do
   (guts0, dflags) <- example
   let dflags' = dopt_set dflags Opt_D_dump_simpl_stats
-  putStrLn $ show $ scoreResults guts0 (zeroSimplCount dflags') scoreATickSpeed
+      measure = CountMeasure scoreATickSpeed
+  putStrLn $ show $ scoreResults guts0 (zeroSimplCount dflags') measure
 
   let optFlags = updOptLevel 2 dflags
   gutsO <- pipeline guts0 optFlags
-  putStrLn $ show $ scoreResults gutsO (zeroSimplCount dflags') scoreATickSpeed
+  putStrLn $ show $ scoreResults gutsO (zeroSimplCount dflags') measure
 
   -- putStrLn $ strFromGuts dflags gutsO
-  let problem = inliningProblem gutsO dflags' scoreATickSpeed
+  let problem = inliningProblem gutsO dflags' measure 
   bestTape <- findBest budget beta problem Nothing
-  bestScore <- inliningPayoff gutsO dflags' scoreATickSpeed bestTape
+  bestScore <- inliningPayoff gutsO dflags' measure bestTape
   putStrLn $ show bestScore
   putStrLn $ stringFromTape $ justActions bestTape
   return bestTape
@@ -170,8 +171,10 @@ scoreATickDebug a = case a of
   -- BetaReduction _ -> 3
   otherwise -> 0
 
-scoreResults guts count measure
-  = computeScore count measure - (fromIntegral $ coreBindsSize $ mg_binds guts)
+sizeGuts guts = fromIntegral $ coreBindsSize $ mg_binds guts
+
+scoreResults guts count (CountMeasure measure)
+  = computeScore count measure - sizeGuts guts
 
 countTapeDecisions (InSearchMode ToldYes) = 1
 countTapeDecisions (InSearchMode ToldNo) = 1
@@ -179,16 +182,35 @@ countTapeDecisions _ = 0
 
 tapeResults guts dflags tape
   = do ((guts, feedbacks), counts) <- simplifyWithTapes guts dflags $ tapeSetFromTape tape
-       let tapeEaten = computeScore counts countTapeDecisions
-           moreNeeded = any sfbMoreActions feedbacks
-       return (guts, counts, moreNeeded)
+       return (guts, counts, last feedbacks)
 
-adaptSimplifierFeedback :: CountMeasure -> SimplifierFeedback -> ActionSpec a -> BanditFeedback a
-adaptSimplifierFeedback (CountMeasure f) InProgressFeedback { sfbSubproblemFeedbacks = sf
-					   , sfbMoreActions = ma}
-  = undefined
-{-BanditFeedback { fbSubproblemFeedbacks = reverse $ map adaptSimplifierFeedback sf
-		   , fbActions = -}
+
+adaptCompleteFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool
+adaptCompleteFeedback cm@(CountMeasure f) 
+		      CompleteSFeedback 
+			   { sfbSubproblemFeedbacks = sf
+			   , sfbSimplCounts = cnt 
+			   , sfbExprSize = exprSize
+			   , sfbMoreActions = moreNeeded
+			   , sfbPrevious = previous}
+  = let currentNode = BanditFeedback { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) sf
+				     , fbPayoff = computeScore cnt f - fromIntegral exprSize
+				     , fbActions = if moreNeeded 
+						      then newActions 
+						      else []}
+	newActions = [actions ++ [True],actions ++ [False]]
+	(node, actions) = maybe (currentNode, []) (\pr -> adaptClosedFeedback cm pr currentNode []) previous
+    in node
+
+adaptClosedFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool -> [Bool] -> (BanditFeedback Bool, [Bool])
+adaptClosedFeedback cm sfb next actionSuffix
+  = let action = sfbActionTaken sfb 
+        currentNode = BanditSubFeedback 
+	   { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) (sfbSubproblemFeedbacks sfb)
+	   , fbActionTaken = action
+	   , fbNext = next}
+	actions = action : actionSuffix
+    in maybe (currentNode, actions) (\pr -> adaptClosedFeedback cm pr currentNode actions) $ sfbPrevious sfb
 
 
 -- showForTape :: [SimplMonad.SearchTapeElement] -> IO ()

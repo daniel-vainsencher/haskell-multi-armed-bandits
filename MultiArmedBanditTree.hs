@@ -70,7 +70,11 @@ instance Show a => Show (BanditTree a) where
 data BanditFeedback a
      = BanditFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
                       , fbPayoff :: Float
-                      , fbActions :: [[a]]} deriving Show
+                      , fbActions :: [[a]]}
+       | BanditSubFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
+                         , fbActionTaken :: a
+                         , fbNext :: BanditFeedback a}
+       deriving Show
 
 mkActionSpec (a:as) = ActionSpec {asAction = a, asNext = (mkActionSpec as), asSubproblems = []}
 mkActionSpec [] = ActionSeqEnd
@@ -157,14 +161,14 @@ play (Bandits bandits) problem beta =
           let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
           return (Bandits (updatedArm : otherArms))
 -}
-initTree :: Monad m => BanditProblem m a -> m (Maybe (ActionSpec a), Float, BanditTree a)
+initTree :: Monad m => BanditProblem m a -> m (ActionSpec a, Float, BanditTree a)
 initTree (BanditProblem playAction rootId _)
   = do BanditFeedback {fbPayoff = score, fbSubproblemFeedbacks = subfbs, fbActions = actions} <- playAction rootId
-       return (Just rootId, score
+       return (rootId, score
               , BanditNode { bnStats = emptyStats `withEntry` score
                            , bnOwnPayoff = score
                            , bnId = justActions rootId
-                           , bnSubtrees = undefined
+                           , bnSubtrees = map treeMaker subfbs
                            , bnSons = []
                            , bnUnvisitedSons = actions})
 
@@ -218,43 +222,50 @@ interactWithProblem (BanditProblem {bpPlayAction = playAction
   = do BanditFeedback {fbPayoff = payoff, fbSubproblemFeedbacks = subfb, fbActions = actions} <- playAction action
        return $ Decision payoff $ Just actions
 
--- Possibilities:
---   the action list describes the path to a node that exists (therefore runs out at a node).
---   the action list describes the path to a node that needs to be created
---     (therefore is a singleton at a node with an unvisitedSon, and we must 
---     receive a list of its unvisited actions).
---   we are not there yet; the first element in the list identifies where to proceed.
 
-updateTree :: (Show a, Eq a) => BanditTree a -> ActionSpec a -> ActionNovelty -> Decision a -> Int -> BanditTree a
+updateTrees :: [BanditTree a] -> [BanditFeedback a] -> [BanditTree a]
+updateTrees = undefined -- map (snd . (\t -> updateTree t))}
 
-updateTree old ActionSeqEnd _ decision _
-  = old { bnStats = bnStats old `withEntry` dPayoff decision
-        , bnUnvisitedSons = fromMaybe [] $ dActions decision }
+treeMaker bf
+  = BanditNode { bnStats = singletonStat $ fbPayoff bf
+	       , bnOwnPayoff = fbPayoff bf
+	       , bnId = []
+	       , bnSubtrees = map treeMaker $ fbSubproblemFeedbacks bf
+	       , bnSons = []
+	       , bnUnvisitedSons = fbActions bf} 
 
--- Unchecked invariant: here act should be equal to first
-updateTree old@BanditNode { bnUnvisitedSons = first : rest}
-           (ActionSpec {asAction = act, asNext = ActionSeqEnd, asSubproblems = []})
-           _
-           (Decision payoff (Just actions))
-           _
-  = let newNode = BanditNode { bnStats = singletonStat $ payoff
-                             , bnOwnPayoff = payoff
-                             , bnId = bnId old ++ [act]
-                             , bnSons = []
-                             , bnUnvisitedSons = actions }
-    in old { bnStats = (bnStats old) `withEntry` payoff
-           , bnSons = newNode : bnSons old
-           , bnUnvisitedSons = rest }
+updateTree2 :: (Show a, Eq a) => BanditTree a -> BanditFeedback a -> Int -> (Float, BanditTree a)
+-- If the BF carries a payoff, action occured in current existing BT node. Cannot be that we have sons (visited or otherwise), or feedback would be in one of them.
+updateTree2 old@BanditNode {bnSons = [], bnUnvisitedSons = []} bf@BanditFeedback {} depth
+  = let po = fbPayoff bf
+    in (po
+       , old { bnStats = bnStats old `withEntry` fbPayoff bf
+	     , bnOwnPayoff = po
+	     , bnSubtrees = updateTrees (bnSubtrees old) $ fbSubproblemFeedbacks bf
+	     , bnUnvisitedSons = fbActions bf})
 
-updateTree old actionList@(ActionSpec {asAction = next, asNext = suffix, asSubproblems = []}) an d depth
-  = let (wrong, toUpdate:wrongAfter) = break (\s -> next == head (drop depth $ bnId s)) $ bnSons old
-        updatedSon = updateTree toUpdate suffix an d $ depth + 1
-    in old { bnStats = (bnStats old) `withEntry` (dPayoff d)
-           , bnSons = updatedSon : (wrong ++ wrongAfter)}
+-- If actionTaken on BSF matches the next unvisited son, its successor must be a BF; create a son. Relies on unvisited sons being visited in a constant order. Subproblems need to be created; since we just found them the initial feedback is assumed a BF.
+updateTree2 old@BanditNode {bnUnvisitedSons = ua:uas} bsf@BanditSubFeedback {fbActionTaken = act, fbNext = BanditFeedback {}} depth
+  = let bf = fbNext bsf 
+	po = fbPayoff $ bf
+	freshSon = (treeMaker bf) { bnId = bnId old ++ [fbActionTaken bsf] }
+	newNode = old { bnStats = (bnStats old) `withEntry` po
+		      , bnSons = freshSon : bnSons old
+		      , bnSubtrees = updateTrees (bnSubtrees old) 
+						 $ fbSubproblemFeedbacks bsf
+		      , bnUnvisitedSons = uas}
+    in (po, newNode)
 
---updateTree a b c d e = error $  "logic error in updateTree, shouldn't get here." 
---			     ++ show (a,b,c,d,e)
+-- If actionTaken on BSF matches an existing son, continue into it.
+updateTree2 old bsf@BanditSubFeedback {} depth
+  = let (wrong, sonToUpdate:wrongAfter) = break (\s -> fbActionTaken bsf == head (drop depth $ bnId s)) $ bnSons old
+	(po, freshSon) = updateTree2 sonToUpdate (fbNext bsf) $ depth + 1
+	newNode = old { bnStats = (bnStats old) `withEntry` po
+		      , bnSons = freshSon : (wrong ++ wrongAfter)
+		      , bnSubtrees = updateTrees (bnSubtrees old) (fbSubproblemFeedbacks bsf)}
+    in (po, newNode)
 
+-- Other options should not happen.
 
 {-playFromTreeStaged :: (Monad m, Eq a) => BanditProblem m a -> Integer -> BanditTree a
                       -> Float -> Float
@@ -264,13 +275,11 @@ playFromTreeStaged problem decisionBudget node beta scale
   = do let (novelty, tape) = chooseActions problem decisionBudget node beta scale
        --putStrLn $ show (novelty,tape)
        decision@(Decision payoff _) <- interactWithProblem problem tape novelty
+       feedback <- bpPlayAction problem tape
        --putStrLn $ show decision
-       let newTree = updateTree node tape novelty decision 0
-           (takenM, cost) = case novelty of
-                             NewAction -> (Just tape, 1)
-                             _         -> (Nothing, 0.1)
+       let (payoff, newTree) = updateTree2 node feedback 0
        -- putStrLn $ show newTree
-       return (takenM, payoff, newTree)
+       return (tape, payoff, newTree)
 
 
 ---------------------- Problem 1: bigger is better --------------------
@@ -280,11 +289,11 @@ bibPlayAction n m
   = do return $ case justActions m of
         [] ->  BanditFeedback { fbPayoff = 0
                              , fbActions = [ [fromInteger $ toInteger m] | m <- [1..n]]
-                             , fbSubproblemFeedbacks = undefined}
+                             , fbSubproblemFeedbacks = []}
 
         [i] -> BanditFeedback { fbPayoff = i
                               , fbActions = []
-                              , fbSubproblemFeedbacks = undefined}
+                              , fbSubproblemFeedbacks = []}
 
         _ -> error "bigger is better is a one turn game."
 
@@ -307,7 +316,7 @@ twinHelper (ActionSpec {asAction = x})
                 actions <- randomList x
                 return $ BanditFeedback { fbPayoff = payoff 
                                         , fbActions = map (\x -> [x]) actions 
-                                        , fbSubproblemFeedbacks = undefined }
+                                        , fbSubproblemFeedbacks = [] }
 
 randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
 
@@ -317,7 +326,7 @@ simulationStep (i, _, _, _, _, _, _)  | i == 0 = return Nothing
 simulationStep hextuple =
         let (i, bt, problem, playBudget, beta, minScore, maxScore) = hextuple
         in do (a, s, nbs) <- playFromTreeStaged problem playBudget bt beta $ max 1 (maxScore - minScore)
-              putStrLn $ show (i, length $ justActions $ fromMaybe ActionSeqEnd a, s)
+              putStrLn $ show (i, length $ justActions a, s)
               let miS = min minScore s
                   maS = max maxScore s
               return (Just ((a,s,nbs), (i-1, nbs, problem, playBudget, beta, miS, maS)))
