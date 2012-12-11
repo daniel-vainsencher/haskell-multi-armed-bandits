@@ -117,24 +117,31 @@ bestNode bp@(BanditProblem {bpIsDeterministic = isDet})
   = let measure = if isDet
                        then bnOwnPayoff
                        else (mean . bnStats)
-        (best, rest) = maximalAndRestBy measure $ map (bestNode bp) sons
-    in best
+        (bestDescendant, rest) = maximalAndRestBy measure $ map (bestNode bp) sons
+    in if measure bestDescendant > measure t then bestDescendant else t
 
-bestActionSpec :: BanditProblem m a -> BanditTree a -> ActionSpec a
-bestActionSpec bp t@BanditNode { bnId = id
-			       , bnSubtrees = subtrees
-			       , bnSons = [] }
- = ActionSpec {asAction = Just $ last id, asNext = ActionSeqEnd, asSubproblems = map (bestActionSpec bp) subtrees }
+bestActionSpec :: BanditProblem m a -> Int -> BanditTree a -> ActionSpec a
+bestActionSpec bp depth t@BanditNode { bnId = id
+				     , bnSubtrees = subtrees
+				     , bnSons = [] }
+ = ActionSpec {asAction = Nothing, asNext = ActionSeqEnd, asSubproblems = map (bestActionSpec bp 0) subtrees }
 
 bestActionSpec bp@(BanditProblem {bpIsDeterministic = isDet})
-	       t@BanditNode { bnId = id
-			    , bnSubtrees = subtrees
+	       depth 
+	       t@BanditNode { bnSubtrees = subtrees
 			    , bnSons = sons }
- = let measure = if isDet
+ = let subSpecs = map (bestActionSpec bp 0) subtrees
+       measure = if isDet
                        then bnOwnPayoff
-                       else (mean . bnStats)
-       (best, rest) = maximalAndRestBy measure $ map (bestNode bp) sons
-    in ActionSpec {asAction = Just $ last $ bnId best, asNext = ActionSeqEnd, asSubproblems = map (bestActionSpec bp) subtrees }
+                       else mean . bnStats
+       ((bestSon, _) , _) = maximalAndRestBy (measure . snd) $ map (\s -> (s, bestNode bp s)) sons
+   in if measure t > measure bestSon 
+	 then ActionSpec {asAction = Nothing, asNext = ActionSeqEnd, asSubproblems = subSpecs}
+	 else let act = Just $ head $ drop depth $ bnId bestSon
+		  bestSpec = bestActionSpec bp (depth + 1) bestSon
+	      in ActionSpec { asAction = act
+			    , asNext = bestSpec
+			    , asSubproblems = map (bestActionSpec bp 0) subtrees }
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
@@ -401,5 +408,7 @@ findBest budget beta problem playBudgetM =
        let (_, _, startbt) = initRes
        allResults <- runWithHistory (budget - 1) beta problem (fromMaybe (ceiling budget) playBudgetM) startbt
        let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
-       -- putStrLn $ show tree
-       return $ bestActionSpec problem tree
+       liftIO $ putStrLn $ show tree
+       let actSpec = bestActionSpec problem 0 tree
+       liftIO $ putStrLn $ show (actSpec, bestNode problem tree)
+       return actSpec
