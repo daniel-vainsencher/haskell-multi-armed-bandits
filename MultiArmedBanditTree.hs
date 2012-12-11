@@ -188,7 +188,7 @@ play (Bandits bandits) problem beta =
 initTree :: (MonadIO m, Show a) => BanditProblem m a -> m (ActionSpec a, Float, BanditTree a)
 initTree (BanditProblem playAction rootId _)
   = do BanditFeedback {fbPayoff = score, fbSubproblemFeedbacks = subfbs, fbActions = actions} <- playAction rootId
-       liftIO $ putStrLn $ "Init action got score and further actions:" ++ show (score, actions)
+       -- liftIO $ putStrLn $ "Init action got score and further actions:" ++ show (score, actions)
        return (rootId, score
               , BanditNode { bnStats = emptyStats `withEntry` score
                            , bnOwnPayoff = score
@@ -325,11 +325,11 @@ updateTree2 node feedback depth = error $ "Should not get here. " ++ show node +
 -}
 playFromTreeStaged problem decisionBudget node beta scale
   = do let (novelty, tape) = chooseActions problem decisionBudget node beta scale 0
-       putStrLn $ "Got tape: " ++ show tape
+       -- putStrLn $ "Got tape: " ++ show tape
        feedback <- bpPlayAction problem tape
-       putStrLn $ "Going to update " ++ show node ++ " with feedback " ++ show feedback
+       -- putStrLn $ "Going to update " ++ show node ++ " with feedback " ++ show feedback
        let (payoff, newTree) = updateTree2 node feedback 0
-       putStrLn $ "Updated tree:" ++ show newTree
+       -- putStrLn $ "Updated tree:" ++ show newTree
        return (tape, payoff, newTree)
 
 
@@ -380,7 +380,7 @@ simulationStep (i, _, _, _, _, _, _)  | i == 0 = return Nothing
 simulationStep hextuple =
         let (i, bt, problem, playBudget, beta, minScore, maxScore) = hextuple
         in do (a, s, nbs) <- playFromTreeStaged problem playBudget bt beta $ max 1 (maxScore - minScore)
-              liftIO $ putStrLn $ show (i, length $ justActions a, s)
+              -- liftIO $ putStrLn $ show (i, length $ justActions a, s)
               let miS = min minScore s
                   maS = max maxScore s
               return $ Just ((a,s,nbs), (i-1, nbs, problem, playBudget, beta, miS, maS))
@@ -401,8 +401,8 @@ runWithHistory n beta problem playBudget startState = unfoldrMine simulationStep
 
 -- findBest :: (Show a, MonadIO m) => Float -> Float -> BanditProblem m a -> Maybe Integer -> m (ActionSpec a)
 findBest budget beta problem playBudgetM =
-    do liftIO $ do hSetBuffering stdout NoBuffering
-		   hSetBuffering stderr NoBuffering
+    do liftIO $ do --hSetBuffering stdout NoBuffering
+		   --hSetBuffering stderr NoBuffering
 		   putStrLn $ "Entered findBest with budget, beta: " ++ show (budget, beta)
        initRes <- initTree problem -- Uses 1 run from the budget
        let (_, _, startbt) = initRes
