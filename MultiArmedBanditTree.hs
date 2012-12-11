@@ -203,7 +203,7 @@ data ActionNovelty = NewAction | SonFreeVisited Integer Float deriving Show
 chooseActions :: BanditProblem m a -> Integer -> BanditTree a -> Float -> Float -> Int -> (ActionNovelty, ActionSpec a)
 chooseActions bp@(BanditProblem playAction _ _) decisionBudget (BanditNode stats ownPayoff id subtrees sons (xunvisited : xs)) beta scale depth
    | fromInteger (toInteger (length sons)) <= max 1 (0.02 * (sqrt $ fromInteger (entries stats)))
-   = let new = ActionSpec {asAction = Just $ head $ drop depth xunvisited 
+   = let new = ActionSpec { asAction = Just $ head $ drop depth xunvisited 
 			  , asNext = ActionSeqEnd
 			  , asSubproblems = 
 			      map (\sp -> snd $ chooseActions bp decisionBudget 
