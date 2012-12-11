@@ -98,8 +98,8 @@ playTapeWithStrictness guts dflags measure tape = do
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X"
        let size = sizeGuts resGuts
-	   counts = plusSimplCount count1 count2
-	   completeSFeedback = completeFeedback counts size feedback
+           counts = plusSimplCount count1 count2
+           completeSFeedback = completeFeedback counts size feedback
        return $ adaptCompleteFeedback measure completeSFeedback 
 
 
@@ -120,7 +120,7 @@ playTape guts dflags measure tape = do
                            if needMoreTape then "..." else "X"
 
        let size = sizeGuts resGuts
-	   completeSFeedback = completeFeedback count size feedback
+           completeSFeedback = completeFeedback count size feedback
        return $ adaptCompleteFeedback measure completeSFeedback 
 
 main = work 1000 100
@@ -193,37 +193,46 @@ tapeResults guts dflags tape
 
 adaptCompleteFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool
 adaptCompleteFeedback cm@(CountMeasure f) 
-		      CompleteSFeedback 
-			   { sfbSubproblemFeedbacks = sf
-			   , sfbSimplCounts = cnt 
-			   , sfbExprSize = exprSize
-			   , sfbMoreActions = moreNeeded
-			   , sfbPrevious = previous}
-  = let currentNode = BanditFeedback { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) sf
-				     , fbPayoff = computeScore cnt f - fromIntegral exprSize
-				     , fbActions = if moreNeeded 
-						      then newActions 
-						      else []}
-	newActions = [actions ++ [True],actions ++ [False]]
-	(node, actions) = maybe (currentNode, []) (\pr -> adaptClosedFeedback cm pr currentNode []) previous
+                      CompleteSFeedback
+                           { sfbSubproblemFeedbacks = sf
+                           , sfbSimplCounts = cnt
+                           , sfbExprSize = exprSize
+                           , sfbMoreActions = moreNeeded
+                           , sfbPrevious = previous}
+  = let currentNode 
+            = BanditFeedback 
+                { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) sf
+                , fbPayoff = computeScore cnt f - fromIntegral exprSize
+                , fbActions = if moreNeeded
+                                 then newActions
+                                 else []}
+        newActions = [actions ++ [True],actions ++ [False]]
+        (node, actions) = maybe (currentNode, []) 
+                                (\pr -> adaptClosedFeedback cm pr currentNode []) 
+                                previous
     in node
 
-adaptClosedFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool -> [Bool] -> (BanditFeedback Bool, [Bool])
+adaptClosedFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool 
+                    -> [Bool] -> (BanditFeedback Bool, [Bool])
 adaptClosedFeedback cm sfb next actionSuffix
   = let action = sfbActionTaken sfb 
         currentNode = BanditSubFeedback 
-	   { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) (sfbSubproblemFeedbacks sfb)
-	   , fbActionTaken = action
-	   , fbNext = next}
-	actions = action : actionSuffix
-    in maybe (currentNode, actions) (\pr -> adaptClosedFeedback cm pr currentNode actions) $ sfbPrevious sfb
+           { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) 
+                                         (sfbSubproblemFeedbacks sfb)
+           , fbActionTaken = action
+           , fbNext = next}
+        actions = action : actionSuffix
+    in maybe (currentNode, actions) 
+             (\pr -> adaptClosedFeedback cm pr currentNode actions) 
+             $ sfbPrevious sfb
 
 strFromGuts :: DynFlags -> ModGuts -> String
 strFromGuts flags g = showSDoc flags $ ppr $ mg_binds g
 
 simplifyWithTapes
   :: MonadUtils.MonadIO m =>
-     ModGuts -> DynFlags -> [MTape] -> m ((ModGuts, [SimplifierFeedback]), SimplCount)
+     ModGuts -> DynFlags -> [MTape] 
+     -> m ((ModGuts, [SimplifierFeedback]), SimplCount)
 simplifyWithTapes guts dflags tapes = do
         us <- liftIO $ mkSplitUniqSupply 's'
         hsc_env <- liftIO $ newHscEnv dflags
