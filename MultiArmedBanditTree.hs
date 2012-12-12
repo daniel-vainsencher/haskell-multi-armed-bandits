@@ -152,11 +152,13 @@ bestActionSpec bp@(BanditProblem {bpIsDeterministic = isDet})
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
-ucbBeta :: Stats -> Integer -> Float -> Float -> Float
-ucbBeta stats _ _ _ | entries stats == 0 = 1/0
-ucbBeta stats arms beta scale = empMean + confidenceSlow + confidenceFast
+-- | Modification: if we receive a Just Float, use that as the variance.
+ucbBeta :: Stats -> Integer -> Float -> Float -> Maybe Float-> Float
+ucbBeta stats _ _ _ _ | entries stats == 0 = 1/0
+ucbBeta stats arms beta scale givenVarianceM = empMean + confidenceSlow + confidenceFast
          where empMean = mean stats
-               confidenceSlow = sqrt (2 * (variance stats) * logPart / visit)
+	       theVariance = fromMaybe (variance stats) givenVarianceM
+               confidenceSlow = sqrt (2 * theVariance * logPart / visit)
                confidenceFast = 16 * scale * logPart / 3 / visit
                visit = fromInteger $ entries stats
                logPart = log $ 1 / betaS
@@ -175,8 +177,9 @@ maximalAndRestBy f (x:x':xs) =
 
 -- |Choose an arm that maximizes ucbBeta (appropriate to play according to the UCB algorithm)
 chosenAndRest bandits toStats beta scale =
-          let arms = toInteger $ length bandits
-              currUCB b = ucbBeta (toStats b) arms beta scale
+          let maxVariance = maximum $ map (variance . toStats) bandits
+	      arms = toInteger $ length bandits
+              currUCB b = ucbBeta (toStats b) arms beta scale $ Just maxVariance
               maxUCB = maximum $ map currUCB bandits
           in maximalAndRestBy currUCB bandits
 
