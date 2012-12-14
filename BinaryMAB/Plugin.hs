@@ -19,6 +19,9 @@ simpl_mode = SimplMode { sm_phase      = Phase 0
                          , sm_inline     = True
                          , sm_case_case  = True }
 
+-- Just to ensure we reinitialize first.
+installWrapper a b = do reinitializeGlobals
+                        install a b
 
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install [argstring] todo -- Expect argument to be a single string of form budget:beta:pos
@@ -31,10 +34,10 @@ install [argstring] todo -- Expect argument to be a single string of form budget
                  measure = CountMeasure $ customMeasure measureList
                  stdAloneStage = CoreDoPluginPass "Learning simplification" $ learnAndApply inliningProblem measure budget 4 beta
                  strWrapStage = CoreDoPluginPass "Learning simplification for strictness analysis" $ learnAndApply prestrictnessInliningProblem measure budget 4 beta
-             in do reinitializeGlobals
+             in do
                    dflags <- getDynFlags
-                   liftIO $ putStrLn $ "total budget: " ++ show budget
-                   liftIO $ putStrLn $ showSDoc dflags $ ppr $ todo
+                   putMsgS $ "total budget: " ++ show budget
+                   putMsgS $ showSDoc dflags $ ppr $ todo
                    return $ case posS of
                        "last" -> todo ++ [stdAloneStage]
                        "preStrict" -> injectBeforeStrictness todo stdAloneStage
@@ -66,18 +69,21 @@ learnAndApply problemMk measure budget playBudget beta mg
     = do dflags <- getDynFlags
          let dflags'' = dopt_set dflags Opt_D_dump_simpl_stats
              dflags'  = dopt_unset dflags'' Opt_D_verbose_core2core
-         bestTape <- liftIO $ do
+         (bestTape, initV, seconds) <- liftIO $ do
             start <- getCPUTime
             initValue <- inliningPayoff mg dflags' measure ActionSeqEnd
-            putStrLn $ "Initial payoff: " ++ show initValue
             endMeasure <- getCPUTime
             let problem = problemMk mg dflags' measure
             tape <- findBest budget beta problem $ Just playBudget
-            putStrLn $ "Using the tape: " ++ (stringFromTape $ justActions tape)
             end <- getCPUTime
             let secondsString = show $ (fromIntegral (end - start)) / 10 ^ 12
-            putStrLn $ "Done learning in (seconds): " ++ secondsString
-            return tape
+            return (tape, initValue, secondsString)
+
+         putMsgS $ "Initial payoff: " ++ show initV
+         putMsgS $ "Using the tape: " ++ (stringFromTape $ justActions bestTape)
+         putMsgS $ "Done learning in (seconds): " ++ seconds
+
          (mgNew, _) <- simplifyPgm (todo $ tapeSetFromTape bestTape) mg
+         putMsgS $ "Used the tape, about to exit plugin."
          return mgNew
 
