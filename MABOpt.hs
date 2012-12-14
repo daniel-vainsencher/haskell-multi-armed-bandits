@@ -179,7 +179,7 @@ scoreATickDebug a = case a of
 sizeGuts guts = fromIntegral $ coreBindsSize $ mg_binds guts
 
 scoreResults guts count (CountMeasure measure)
-  = computeScore count measure - sizeGuts guts
+  = computeScore measure count - sizeGuts guts
 
 countTapeDecisions (InSearchMode ToldYes) = 1
 countTapeDecisions (InSearchMode ToldNo) = 1
@@ -199,8 +199,12 @@ adaptCompleteFeedback cm@(CountMeasure f)
 			   , sfbExprSize = exprSize
 			   , sfbMoreActions = moreNeeded
 			   , sfbPrevious = previous}
-  = let currentNode = BanditFeedback { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) sf
-				     , fbPayoff = computeScore cnt f - fromIntegral exprSize
+  = let exclusiveExprSize = exprSize - (sum $ map sfbExprSize sf)
+	scorer = computeScore f
+	exclusiveCountScore = scorer cnt - (sum $ map (scorer . sfbSimplCounts) sf)
+	currentNode = BanditFeedback { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) sf
+				     , fbPayoff = exclusiveCountScore - fromIntegral exclusiveExprSize
+				     , fbInclusivePayoff = scorer cnt - fromIntegral exprSize
 				     , fbActions = if moreNeeded 
 						      then newActions 
 						      else []}

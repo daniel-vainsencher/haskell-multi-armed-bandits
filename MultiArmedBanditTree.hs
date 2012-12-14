@@ -79,6 +79,7 @@ instance Show a => Show (BanditTree a) where
 data BanditFeedback a
      = BanditFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
                       , fbPayoff :: Float
+                      , fbInclusivePayoff :: Float
                       , fbActions :: [[a]]}
        | BanditSubFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
                          , fbActionTaken :: a
@@ -128,28 +129,36 @@ bestNode bp@(BanditProblem {bpIsDeterministic = isDet})
         (bestDescendant, rest) = maximalAndRestBy measure $ map (bestNode bp) sons
     in if measure bestDescendant > measure t then bestDescendant else t
 
-bestActionSpec :: BanditProblem m a -> Int -> BanditTree a -> ActionSpec a
+bestActionSpec :: BanditProblem m a -> Int -> BanditTree a -> (Float, ActionSpec a)
 bestActionSpec bp depth t@BanditNode { bnId = id
 				     , bnSubtrees = subtrees
 				     , bnSons = [] }
- = ActionSpec {asAction = Nothing, asNext = ActionSeqEnd, asSubproblems = map (bestActionSpec bp 0 . bbtNode) subtrees }
+ = let (subPayoffs, subSpecs) = unzip $ map (bestActionSpec bp 0 . bbtNode) subtrees 
+   in (bnOwnPayoff t + sum subPayoffs
+      , ActionSpec { asAction = Nothing
+		   , asNext = ActionSeqEnd
+		   , asSubproblems = subSpecs })
 
 bestActionSpec bp@(BanditProblem {bpIsDeterministic = isDet})
 	       depth 
 	       t@BanditNode { bnSubtrees = subtrees
 			    , bnSons = sons }
- = let subSpecs = map (bestActionSpec bp 0 . bbtNode) subtrees
-       measure = if isDet
-                       then bnOwnPayoff
-                       else mean . bnStats
-       ((bestSon, _) , _) = maximalAndRestBy (measure . snd) $ map (\s -> (s, bestNode bp s)) sons
-   in if measure t > measure bestSon 
-	 then ActionSpec {asAction = Nothing, asNext = ActionSeqEnd, asSubproblems = subSpecs}
+ = let (subPayoffs, subSpecs) = unzip $ map (bestActionSpec bp 0 . bbtNode) subtrees
+       ((bestSon, (bestSonPayoff, bestSonSpec)) , _subOptimal) 
+           = maximalAndRestBy (fst . snd) $ map (\s -> (s, bestActionSpec bp 
+									  (depth + 1) 
+									  s)) 
+						sons
+       subProblemPayoffs = sum subPayoffs
+       ownOptPayoff = bnOwnPayoff t + subProblemPayoffs
+   in if bnOwnPayoff t > bestSonPayoff 
+	 then ( ownOptPayoff, ActionSeqEnd) 
+			      --ActionSpec {asAction = Nothing, asNext = ActionSeqEnd, asSubproblems = subSpecs})
 	 else let act = Just $ head $ drop depth $ bnId bestSon
-		  bestSpec = bestActionSpec bp (depth + 1) bestSon
-	      in ActionSpec { asAction = act
-			    , asNext = bestSpec
-			    , asSubproblems = map (bestActionSpec bp 0 . bbtNode) subtrees }
+	      in  ( subProblemPayoffs + bestSonPayoff
+	          , ActionSpec { asAction = act
+			       , asNext = bestSonSpec
+			       , asSubproblems = subSpecs})
 
 -- | selfVisitStats, #totalArms, #totalVisits, errorProbability -> upper confidence bound. See:
 -- | Audibert, Munos and Szepesvari (2006). Use of variance estimation in the multi-armed bandit problem.
@@ -202,9 +211,12 @@ initTree (BanditProblem playAction rootId _) -- initDecisionBudget
        feedback <- playAction rootId 
        case feedback of
 	    BanditSubFeedback {} -> error "We currently expect rootId to be ActionSeqEnd, therefore only BanditFeedback." 
-	    bf@BanditFeedback {fbPayoff = score, fbSubproblemFeedbacks = subfbs, fbActions = actions}       -> do 
+	    bf@BanditFeedback { fbPayoff = score
+			      , fbInclusivePayoff = incScore
+			      , fbSubproblemFeedbacks = subfbs
+			      , fbActions = actions} -> do 
 		 liftIO $ putStrLn $ "Init got feedback:" ++ show bf 
-		 let node = BanditNode { bnStats = emptyStats `withEntry` score
+		 let node = BanditNode { bnStats = emptyStats `withEntry` incScore
 				       , bnOwnPayoff = score
 				       , bnId = justActions rootId
 				       , bnUCBDecisions = 0
@@ -302,7 +314,7 @@ updateTrees bts bfs
 
 
 nodeMaker bf@BanditFeedback {}
-	     = BanditNode { bnStats = singletonStat $ fbPayoff bf
+	     = BanditNode { bnStats = singletonStat $ fbInclusivePayoff bf
 			  , bnOwnPayoff = fbPayoff bf
 			  , bnId = []
 			  , bnSubtrees = map treeMaker 
@@ -316,25 +328,24 @@ treeMaker bf@BanditFeedback {}
   = let node = nodeMaker bf
     in BudgetedBanditTree { bbtNode = node
 			  , bbtPlayBudget = 4
-			  , bbtMin = fbPayoff bf
-			  , bbtMax = fbPayoff bf}
+			  , bbtMin = fbInclusivePayoff bf
+			  , bbtMax = fbInclusivePayoff bf}
 treeMaker _ = error "Trying to create a new tree with BanditSubFeedback"
 
 updateTree2 :: (Show a, Eq a) => BanditTree a -> BanditFeedback a -> Integer -> Int -> (Float, Bool, BanditTree a)
 -- If the BF carries a payoff, action occured in current existing BT node. Cannot be that we have sons (visited or otherwise), or feedback would be in one of them.
 updateTree2 old@BanditNode {bnSons = [], bnUnvisitedSons = []} bf@BanditFeedback {} decisionBudget depth
-  = let po = fbPayoff bf
+  = let po = fbInclusivePayoff bf
     in (po
        , True -- Replaying a terminal action, time to widen
-       , old { bnStats = bnStats old `withEntry` fbPayoff bf
-	     , bnOwnPayoff = po
+       , old { bnStats = bnStats old `withEntry` po
 	     , bnSubtrees = updateTrees (bnSubtrees old) $ fbSubproblemFeedbacks bf
 	     , bnUnvisitedSons = fbActions bf})
 
 -- If actionTaken on BSF matches the next unvisited son, its successor must be a BF; create a son. Relies on unvisited sons being visited in a constant order. Subproblems need to be created; since we just found them the initial feedback is assumed a BF.
 updateTree2 old@BanditNode {bnUnvisitedSons = ua:uas} bsf@BanditSubFeedback {fbActionTaken = act, fbNext = BanditFeedback {}} decisionBudget depth
   = let bf = fbNext bsf 
-	po = fbPayoff $ bf
+	po = fbInclusivePayoff bf
 	freshSon = (nodeMaker bf) { bnId = bnId old ++ [fbActionTaken bsf] }
 	newNode = old { bnStats = (bnStats old) `withEntry` po
 		      , bnSons = freshSon : bnSons old
@@ -380,10 +391,12 @@ bibPlayAction :: Monad m => Int -> ActionSpec Float -> m (BanditFeedback Float)
 bibPlayAction n m
   = do return $ case justActions m of
         [] ->  BanditFeedback { fbPayoff = 0
+			      , fbInclusivePayoff = 0
                               , fbActions = [ [fromInteger $ toInteger m] | m <- [1..n]]
                               , fbSubproblemFeedbacks = []}
 
         [i] -> BanditFeedback { fbPayoff = i
+			      , fbInclusivePayoff = i
                               , fbActions = []
                               , fbSubproblemFeedbacks = []}
 
@@ -407,6 +420,7 @@ twinHelper (ActionSpec {asAction = Just x})
            = do let payoff = - (min (abs (x+1)) (abs (x-1)))
                 actions <- randomList x
                 return $ BanditFeedback { fbPayoff = payoff 
+					, fbInclusivePayoff = payoff 
                                         , fbActions = map (\x -> [x]) actions 
                                         , fbSubproblemFeedbacks = [] }
 twinHelper _ = undefined 
@@ -449,6 +463,6 @@ findBest budget beta problem playBudgetM =
        allResults <- runWithHistory (budget - 1) beta problem startbt
        let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
        liftIO $ putStrLn $ show tree
-       let actSpec = bestActionSpec problem 0 $ bbtNode tree
-       liftIO $ putStrLn $ show (actSpec, bestNode problem $ bbtNode tree, bbtPlayBudget tree)
+       let (bestScore, actSpec) = bestActionSpec problem 0 $ bbtNode tree
+       liftIO $ putStrLn $ show (actSpec, bbtPlayBudget tree)
        return actSpec
