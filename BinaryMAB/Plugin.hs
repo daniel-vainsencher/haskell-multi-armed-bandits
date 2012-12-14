@@ -8,7 +8,7 @@ import System.CPUTime
 
 plugin :: Plugin
 plugin = defaultPlugin {
-  installCoreToDos = install
+  installCoreToDos = installWrapper
   }
 
 
