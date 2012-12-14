@@ -370,8 +370,8 @@ playFromTreeStaged problem node beta
   = do let tape = chooseActionSequence problem node beta
        -- putStrLn $ "Got tape: " ++ show tape
        feedback <- bpPlayAction problem tape
-       putStrLn $ "Got feedback " ++ show feedback
-       putStrLn $ "Going to update " ++ show node 
+       -- putStrLn $ "Got feedback " ++ show feedback
+       -- putStrLn $ "Going to update " ++ show node
        let (payoff, newTree) = updateTree node feedback
        -- putStrLn $ "Updated tree:" ++ show newTree
        return (tape, payoff, newTree)
@@ -456,5 +456,5 @@ findBest budget beta problem playBudgetM =
        let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
        liftIO $ putStrLn $ show tree
        let (bestScore, actSpec) = bestActionSpec problem 0 $ bbtNode tree
-       liftIO $ putStrLn $ show (actSpec, bbtPlayBudget tree)
+       liftIO $ putStrLn $ show (bestScore, actSpec, bbtPlayBudget tree)
        return actSpec
