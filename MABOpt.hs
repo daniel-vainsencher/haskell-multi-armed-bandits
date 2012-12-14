@@ -93,10 +93,10 @@ playTapeWithStrictness guts dflags measure tape = do
               then [justActions tape ++ [True], justActions tape ++ [False]]
               else []
        let seconds = fromIntegral (endTime - startTime) / 10 ** 12
-       liftIO $ putStrLn $ "Tape length=" ++ show (length $ justActions tape) ++
+       {- liftIO $ putStrLn $ "Tape length=" ++ show (length $ justActions tape) ++
                            ", seconds to run: " ++ show seconds ++
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
-                           if needMoreTape then "..." else "X"
+                           if needMoreTape then "..." else "X" -}
        let size = sizeGuts resGuts
            counts = plusSimplCount count1 count2
            completeSFeedback = completeFeedback counts size feedback
@@ -107,17 +107,17 @@ playTapeWithStrictness guts dflags measure tape = do
 playTape guts dflags measure tape = do
        startTime <- liftIO getCPUTime
        (resGuts, count, feedback) <- tapeResults guts dflags tape
-       putStrLn $ "Got simplifier feedback " ++ show feedback
+       --putStrLn $ "Got simplifier feedback " ++ show feedback
        let needMoreTape = sfbMoreActions feedback
        endTime <- liftIO getCPUTime
        let actionList = if needMoreTape
               then [justActions tape ++ [True], justActions tape ++ [False]]
               else []
        let seconds = fromIntegral (endTime - startTime) / 10 ** 12
-       liftIO $ putStrLn $ "Tape length=" ++ show (length $ justActions tape) ++
+       {- liftIO $ putStrLn $ "Tape length=" ++ show (length $ justActions tape) ++
                            ", seconds to run: " ++ show seconds ++
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
-                           if needMoreTape then "..." else "X"
+                           if needMoreTape then "..." else "X" -}
 
        let size = sizeGuts resGuts
            completeSFeedback = completeFeedback count size feedback
@@ -187,7 +187,7 @@ countTapeDecisions _ = 0
 
 tapeResults guts dflags tape
   = do ((guts, feedbacks), counts) <- simplifyWithTapes guts dflags $ tapeSetFromTape tape
-       liftIO $ putStrLn $ "got feedbacks:" ++ show feedbacks
+       -- liftIO $ putStrLn $ "got feedbacks:" ++ show feedbacks
        return (guts, counts, head feedbacks)
 
 
