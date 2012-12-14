@@ -86,14 +86,6 @@ data BanditFeedback a
                          , fbNext :: BanditFeedback a}
        deriving Show
 
-mkActionSpec (a:as) = ActionSpec {asAction = a, asNext = (mkActionSpec as), asSubproblems = []}
-mkActionSpec [] = ActionSeqEnd
-
-addAction ActionSeqEnd a = ActionSpec {asAction = a, asNext = ActionSeqEnd, asSubproblems = []}
-addAction (ActionSpec {asAction = a, asNext = rest}) an
-          = let new = addAction rest an
-            in ActionSpec {asAction = a, asNext = new, asSubproblems = []}
-
 justActions :: ActionSpec a -> [a]
 justActions (ActionSpec {asAction = Just a, asNext = n}) = a : justActions n
 justActions _ = []
