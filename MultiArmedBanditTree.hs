@@ -102,12 +102,13 @@ prettyBanditTree (BanditNode { bnStats = stats
                              , bnId = id
                              , bnSons = sons
                              , bnUnvisitedSons = unvisited
-                             , bnSubtrees = []})
-  = ownDoc $$ unvisDocs $$ (nest 2 $ vcat $ reverse sonsDocs)
+                             , bnSubtrees = subtrees})
+  = ownDoc $$ unvisDocs $$ (nest 2 $ vcat $ reverse sonsDocs) $$ subDoc
     where
        ownDoc = text $ show (stats, ownPayoff, id)
        sonsDocs = map prettyBanditTree sons
-       unvisDocs = hcat $ map (text . show) unvisited
+       unvisDocs = hcat $ map (text . show . last) unvisited
+       subDoc = nest 2 $ vcat $ map (text . show) subtrees
 
 
 -- | bpPlayAction represents the environment (which gives rewards and
@@ -197,21 +198,25 @@ play (Bandits bandits) problem beta =
 -}
 initTree :: (MonadIO m, Show a) => BanditProblem m a -> m (ActionSpec a, Float, BudgetedBanditTree a)
 initTree (BanditProblem playAction rootId _) -- initDecisionBudget
-  = do BanditFeedback {fbPayoff = score, fbSubproblemFeedbacks = subfbs, fbActions = actions} <- playAction rootId
-       -- liftIO $ putStrLn $ "Init action got score and further actions:" ++ show (score, actions)
-       let node = BanditNode { bnStats = emptyStats `withEntry` score
-			     , bnOwnPayoff = score
-			     , bnId = justActions rootId
-			     , bnUCBDecisions = 0
-			     , bnSubtrees = map treeMaker subfbs
-			     , bnSons = []
-			     , bnUnvisitedSons = actions}
-       return (rootId, score
-              , BudgetedBanditTree 
-	          { bbtPlayBudget = 4 -- Corresponds to greedy mode
-		  , bbtNode = node
-		  , bbtMin = score
-		  , bbtMax = score})
+  = do liftIO $ putStrLn $ " Init to use the ActionSpec: " ++ show rootId 
+       feedback <- playAction rootId 
+       case feedback of
+	    BanditSubFeedback {} -> error "We currently expect rootId to be ActionSeqEnd, therefore only BanditFeedback." 
+	    bf@BanditFeedback {fbPayoff = score, fbSubproblemFeedbacks = subfbs, fbActions = actions}       -> do 
+		 liftIO $ putStrLn $ "Init got feedback:" ++ show bf 
+		 let node = BanditNode { bnStats = emptyStats `withEntry` score
+				       , bnOwnPayoff = score
+				       , bnId = justActions rootId
+				       , bnUCBDecisions = 0
+				       , bnSubtrees = map treeMaker subfbs
+				       , bnSons = []
+				       , bnUnvisitedSons = actions}
+                 return (rootId, score
+			, BudgetedBanditTree 
+			    { bbtPlayBudget = 4 -- Corresponds to greedy mode
+			    , bbtNode = node
+			    , bbtMin = score
+			    , bbtMax = score})
 
 data ActionNovelty = NewAction | SonFreeVisited Integer Float deriving Show
 
@@ -296,7 +301,8 @@ updateTrees bts bfs
 	    in trees
 
 
-nodeMaker bf = BanditNode { bnStats = singletonStat $ fbPayoff bf
+nodeMaker bf@BanditFeedback {}
+	     = BanditNode { bnStats = singletonStat $ fbPayoff bf
 			  , bnOwnPayoff = fbPayoff bf
 			  , bnId = []
 			  , bnSubtrees = map treeMaker 
@@ -304,13 +310,15 @@ nodeMaker bf = BanditNode { bnStats = singletonStat $ fbPayoff bf
 			  , bnUCBDecisions = 0
 			  , bnSons = []
 			  , bnUnvisitedSons = fbActions bf} 
+nodeMaker _ = error "A fresh node is only created with unvisitedSons."
 
-treeMaker bf
+treeMaker bf@BanditFeedback {}
   = let node = nodeMaker bf
     in BudgetedBanditTree { bbtNode = node
 			  , bbtPlayBudget = 4
 			  , bbtMin = fbPayoff bf
 			  , bbtMax = fbPayoff bf}
+treeMaker _ = error "Trying to create a new tree with BanditSubFeedback"
 
 updateTree2 :: (Show a, Eq a) => BanditTree a -> BanditFeedback a -> Integer -> Int -> (Float, Bool, BanditTree a)
 -- If the BF carries a payoff, action occured in current existing BT node. Cannot be that we have sons (visited or otherwise), or feedback would be in one of them.
@@ -334,7 +342,9 @@ updateTree2 old@BanditNode {bnUnvisitedSons = ua:uas} bsf@BanditSubFeedback {fbA
 						 $ fbSubproblemFeedbacks bsf
 		      , bnUCBDecisions = bnUCBDecisions old + 1
 		      , bnUnvisitedSons = uas}
-    in (po, False, newNode)
+    in if last ua /= act 
+	  then error $ "An action was taken that does not correspond to the next unvisited son. Node: " ++ show old ++ "Feedback: " ++ show bsf ++ "depth: " ++ show depth
+	  else (po, False, newNode)
 
 -- If actionTaken on BSF matches an existing son, continue into it.
 updateTree2 old bsf@BanditSubFeedback {} decisionBudget depth
@@ -357,7 +367,8 @@ playFromTreeStaged problem node beta
   = do let tape = chooseActionSequence problem node beta
        -- putStrLn $ "Got tape: " ++ show tape
        feedback <- bpPlayAction problem tape
-       -- putStrLn $ "Going to update " ++ show node ++ " with feedback " ++ show feedback
+       putStrLn $ "Got feedback " ++ show feedback
+       putStrLn $ "Going to update " ++ show node 
        let (payoff, newTree) = updateTree node feedback
        -- putStrLn $ "Updated tree:" ++ show newTree
        return (tape, payoff, newTree)
@@ -439,5 +450,5 @@ findBest budget beta problem playBudgetM =
        let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
        liftIO $ putStrLn $ show tree
        let actSpec = bestActionSpec problem 0 $ bbtNode tree
-       liftIO $ putStrLn $ show (actSpec, bestNode problem $ bbtNode tree)
+       liftIO $ putStrLn $ show (actSpec, bestNode problem $ bbtNode tree, bbtPlayBudget tree)
        return actSpec
