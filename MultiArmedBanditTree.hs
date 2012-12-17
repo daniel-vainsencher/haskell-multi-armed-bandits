@@ -78,11 +78,11 @@ instance Show a => Show (BanditTree a) where
 
 data BanditFeedback a
      = BanditFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
-                      , fbPayoff :: Float
-                      , fbInclusivePayoff :: Float
+                      , fbPayoff :: !Float
+                      , fbInclusivePayoff :: !Float
                       , fbActions :: [[a]]}
        | BanditSubFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
-                         , fbActionTaken :: a
+                         , fbActionTaken :: !a
                          , fbNext :: BanditFeedback a}
        deriving Show
 
