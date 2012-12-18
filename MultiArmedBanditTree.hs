@@ -77,13 +77,13 @@ instance Show a => Show (BanditTree a) where
   show bt = show $ prettyBanditTree bt
 
 data BanditFeedback a
-     = BanditFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
-                      , fbPayoff :: !Float
+     = BanditFeedback { fbPayoff :: !Float
                       , fbInclusivePayoff :: !Float
-                      , fbActions :: [[a]]}
-       | BanditSubFeedback { fbSubproblemFeedbacks :: [BanditFeedback a]
-                         , fbActionTaken :: !a
-                         , fbNext :: BanditFeedback a}
+                      , fbActions :: [[a]]
+                      , fbSubproblemFeedbacks :: [BanditFeedback a]}
+       | BanditSubFeedback { fbActionTaken :: !a
+                           , fbSubproblemFeedbacks :: [BanditFeedback a]
+                           , fbNext :: BanditFeedback a}
        deriving Show
 
 justActions :: ActionSpec a -> [a]
@@ -96,7 +96,7 @@ prettyBanditTree (BanditNode { bnStats = stats
                              , bnSons = sons
                              , bnUnvisitedSons = unvisited
                              , bnSubtrees = subtrees})
-  = ownDoc $$ unvisDocs $$ (nest 2 $ vcat $ reverse sonsDocs) $$ subDoc
+  = ownDoc $$ unvisDocs $$ subDoc $$ (nest 2 $ vcat $ reverse sonsDocs)
     where
        ownDoc = text $ show (stats, ownPayoff, id)
        sonsDocs = map prettyBanditTree sons
