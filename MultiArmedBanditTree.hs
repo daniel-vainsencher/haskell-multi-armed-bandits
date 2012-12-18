@@ -300,7 +300,7 @@ updateTree bbt bf
 updateTrees :: (Show a, Eq a) => [BudgetedBanditTree a] -> [BanditFeedback a] -> [BudgetedBanditTree a]
 updateTrees bts bfs 
   = if length bts /= length bfs 
-       then error "Subproblem list length inconsistent between feedback and tree." 
+       then error $ "Subproblem list length inconsistent between tree:\n" ++ show bts ++ "\nand feedback:\n" ++ show bfs
        else let (_, trees) = unzip [updateTree t fb | (t, fb) <- zip bts bfs]
 	    in trees
 
