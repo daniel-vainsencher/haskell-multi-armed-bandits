@@ -2,12 +2,10 @@
 module MultiArmedBanditTree (BanditProblem(..), findBest, twinPeaks, ActionSpec(..), justActions, BanditFeedback(..)) where
 import Data.List
 import Control.Monad.IO.Class
-import Control.Monad.Loops
 import System.Random
 import Data.Maybe
 import Text.Printf
 import Text.PrettyPrint.HughesPJ
---import Graphics.Rendering.Chart.Simple
 import GHC.Float
 import CoreMonad hiding (liftIO)
 import SimplMonad
