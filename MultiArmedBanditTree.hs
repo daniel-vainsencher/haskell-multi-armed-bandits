@@ -452,7 +452,9 @@ findBest budget beta problem playBudgetM =
        let (_, _, startbt) = initRes
        allResults <- runWithHistory (budget - 1) beta problem startbt
        let tree = head $ reverse $ [c | (a,b,c) <- initRes : allResults]
-       liftIO $ putStrLn $ show tree
        let (bestScore, actSpec) = bestActionSpec problem 0 $ bbtNode tree
-       liftIO $ putStrLn $ show (bestScore, actSpec, bbtPlayBudget tree)
+       liftIO $ putStrLn $ "Best score:" ++ show bestScore
+       liftIO $ putStrLn $ "Final main play budget:" ++ (show $ bbtPlayBudget tree)
+       liftIO $ putStrLn $ "For actionSpec: " ++ show actSpec
+       liftIO $ putStrLn $ "Resulting in tree: " ++ show tree
        return actSpec
