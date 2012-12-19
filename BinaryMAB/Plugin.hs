@@ -40,14 +40,15 @@ install [argstring] todo -- Expect argument to be a single string of form budget
                    putMsgS $ showSDoc dflags $ ppr $ todo
                    return $ case posS of
                        "last" -> todo ++ [stdAloneStage]
-                       "preStrict" -> injectBeforeStrictness todo stdAloneStage
-                       "aroundStrict" -> injectBeforeStrictness todo strWrapStage
+                       "preStrict" -> injectBeforeStrictness stdAloneStage $ injectBeforeStrictness stdAloneStage $ injectBeforeStrictness stdAloneStage $ todo
+                       "aroundStrict" -> injectBeforeStrictness strWrapStage todo
+                       "beforeSimplifier" -> injectBeforeSimplifier stdAloneStage todo
                        _ -> error "Invalid position."
            _ -> usage argstring
 
 install argStrings _ = do liftIO $ usage argStrings
 
-usage argStrings = error $ "Please pass single string of form <budget>:<beta>:[last|preStrict|aroundStrict]:<[Int] with 6 entries.>. Currently passed:" ++ show argStrings
+usage argStrings = error $ "Please pass single string of form <budget>:<beta>:[last|preStrict|aroundStrict|beforeSimplifier]:<[Int] with 6 entries.>. Currently passed:" ++ show argStrings
 
 customMeasure list a = case a of
   DeadBindingElim _ -> list!!0
@@ -59,10 +60,20 @@ customMeasure list a = case a of
   otherwise -> 0
 
 
-injectBeforeStrictness [] new = []
-injectBeforeStrictness (s@(CoreDoStrictness):rest) new = new:s:(injectBeforeStrictness rest new)
-injectBeforeStrictness (s@(CoreDoPasses more):rest) new = (CoreDoPasses $ injectBeforeStrictness more new):(injectBeforeStrictness rest new)
-injectBeforeStrictness (x:xs) new = x:(injectBeforeStrictness xs new)
+injectBeforeStrictness new []  = []
+injectBeforeStrictness new (s@(CoreDoStrictness):rest) = new:s:(injectBeforeStrictness new rest)
+injectBeforeStrictness new (s@(CoreDoPasses more):rest) = (CoreDoPasses $ injectBeforeStrictness new more):(injectBeforeStrictness new rest )
+injectBeforeStrictness new (x:xs) = x:(injectBeforeStrictness new xs)
+
+injectBeforeSimplifier new [] = []
+
+injectBeforeSimplifier new (s@(CoreDoSimplify {}):rest)
+  = new:s:(injectBeforeSimplifier new rest)
+
+injectBeforeSimplifier new (s@(CoreDoPasses more):rest)
+  = CoreDoPasses (injectBeforeSimplifier new more) : injectBeforeSimplifier new rest
+
+injectBeforeSimplifier new (x:xs) = x:injectBeforeSimplifier new xs
 
 -- learnAndApply :: BanditProblem m a -> Float -> Float -> ModGuts -> CoreM ModGuts
 learnAndApply problemMk measure budget playBudget beta mg
