@@ -33,14 +33,14 @@ Contents:
 
 1. Explain the planning algorithm view of problems.
 
-2. Present one simple way to view inlining decisions as a planning
-problem.
+2. Present inlining in GHC, and one simple way to view inlining
+decisions as a planning problem.
 
 3. Present a subclass of planning algorithms based on multiarmed
 bandit algorithms.
 
-4. Present an extension called isolated subproblems to planning in the
-context of GHC and inlining.
+4. Describe how subproblems can be isolated in the context of GHC and
+inlining.
 
 Planning algorithm view of problems
 ===================================
@@ -287,7 +287,6 @@ program. Consider the following fragment:
     in < ... v1 ... v2 ... > 
     ~~~
 
- 
 If for some reason we knew that v1, v2 will not be inlined, then we
 can in principle consider the simplification of expr1 and of expr2 as
 independent subproblems: how we compute one does not affect the
@@ -315,7 +314,6 @@ consider:
     in func expr1 expr2
     ~~~
 
-
 If func cannot be inlined (for example, it is a library function, and
 its source is not given), then expr1 expr2 seem independent. But a
 rewrite rule could remove the function and render expr1 and expr2
@@ -336,11 +334,11 @@ Then the definition can be simplified in isolation from the rest of
 the program; posing a less deep problem, it can be solved closer to
 optimality, and the necessary feedback is obtained at no additional
 cost. The improved definition is used wherever the name is referenced
-originally and not inlined. The remainder of the program is now
-simplified with respect to the fixed unfolding; if a reference to the
-variable is inlined, it is the unfolding that replaces it. To the
-extent that this occurs, optimizing the remainder of the program will
-still include decisions about the variable; however the decisions
-about the definition itself do not contribute to the depth of the
-remaining problem.
+and not inlined. The remainder of the program is now simplified with
+respect to the fixed unfolding; if a reference to the variable is
+inlined, it is the unfolding that replaces it. To the extent that this
+occurs, optimizing the remainder of the program will still include
+decisions about simplifying the variables right hand side; however the
+decisions about simplifying the definition itself do not contribute to
+the depth of the remaining problem.
 
