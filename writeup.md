@@ -29,23 +29,7 @@ the program structure, resulting in multiple more managable planning
 problems. We address also some possible efficiencies in working on
 these multiple problems at the same time.
 
-We have created two versions of the algorithm, one which views
-inlining decisions are made sequentially, and another which isolates
-subexpressions of the program for separate consideration.
-
-The latter has two advantages:
-
-1. To the extent that the subexpression can be improved in isolation,
-it consists of far fewer decisions, and can therefore be solved more
-precisely for a given budget of feedback instances.
-
-2. Each feedback is obtained by running a part of the compiler
-(simplifier), with non-trivial cost proportional to the size of the
-program. We have succeeded in obtaining a distinct feedback for each
-isolated problem in a single run of the simplifier.  These make a
-non-exponential budget go much further.
-
-Contents: 
+Contents:
 
 1. Explain the planning algorithm view of problems.
 
