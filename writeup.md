@@ -3,18 +3,18 @@ General
 
 The project idea is to use ideas from machine learning, to treat the
 inlining decisions made in an optimizing compiler (GHC) as a planning
-problem, hopefully resulting in higher performance output
-programs. This could be useful in scenarios where compilation effort
-is less important than runtime performance; we propose two such
-scenarios.
+problem. The goal is to output more efficient programs, with less
+programmer effort. This should be useful in scenarios where
+compilation cost is less important than runtime performance; we
+propose two such scenarios.
 
 In the first consider cross compilation where the target is a highly
 power constrained device, such as a battery operated sensor network
 node. In the second, consider a long running service where response
 latency is very important, such as algorithmic trading. In either
 case, it is reasonable to expend considerable computational effort on
-compiling the most efficient program for the releant criterion. In the
-sensor network case we might distinguish a preparation phase after
+compiling the most efficient program for the relevant criterion. In
+the sensor network case we might distinguish a preparation phase after
 which the program is deployed to the units and the units to the field,
 and all that matters is how efficient a program we achieved before
 deployment. In the low latency service, in contrast, we might imagine
