@@ -183,9 +183,9 @@ simple function over compiled programs that expresses those
 preferences, and use that as feedback, we would not need a
 benchmark. In fact, GHC already counts simplifier events in
 SimplCount, and some of those (such as dead code elimination: the
-removal of a binding that is no longer referenced anywhere) counts the
-kind of improvements that we hope inlining will result in. This leads
-us to:
+removal of a binding that is no longer referenced anywhere) correspond
+to the kind of improvements that we hope inlining will result in. This
+leads us to:
 
 > simplificationCountInliningProblem :: BanditProblem CoreM Bool 
 > simplificationCountInliningProblem = BanditProblem 
