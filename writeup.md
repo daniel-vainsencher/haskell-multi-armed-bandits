@@ -135,7 +135,7 @@ The simplifier pass in the compiler GHC iterates over a Core
 representation of a Haskell program. When it encounters a function
 application
 
-> f x y z
+> f x (y + 2)
 
 with the function definition in scope, say:
 
@@ -143,15 +143,23 @@ with the function definition in scope, say:
 
 it has the possibility of inlining it to produce
 
-> (\a b -> a+2*b) x y z
+> (\a b -> a+2*b) x (y + 2)
 
-This brings the definition of the function close to a particular
-context in which it is called, which may enable some further
-simplifications: compile time arithmetic, removal of high-order
-programming over head etc.
+The cost of inlining is code size growth due to the duplication of the
+definition. The direct benefit is the removal of some overhead, in
+particular the expression can be immidiately beta reduced to
 
-Then the most natural way to pose inlining as a planning problems is
-the following:
+> x+2*(y + 2)
+
+But most of the benefit of inlining is that it brings the definition
+of the function closer to a particular context in which it is called,
+which may enable some further optimization: compile time arithmetic,
+removal of high-order programming over head etc, strictness analysis
+etc. This motivates a view of inlining decisions as part of a process,
+rather than isolated decisions.
+
+Then a natural way to pose inlining as a planning problems is the
+following:
 
 > runtimeInliningProblem :: BanditProblem IO Bool 
 > runtimeInliningProblem = BanditProblem 
