@@ -1,0 +1,4 @@
+make clean && make boot && make EXTRA_HC_OPTS="-O -fsimpl-tick-factor=10000" 2>&1 | tee  ~/experimental/analysis/WithGhc76/perfNoExtraOptions.log
+make clean && make boot && make EXTRA_HC_OPTS="-O -fsimpl-tick-factor=10000 -fexpose-all-unfoldings -funfolding-creation-threshold=10000" 2>&1 | tee ~/experimental/analysis/WithGhc76/perfAllUnfoldings.log
+make clean && make boot && make EXTRA_HC_OPTS="-O -fsimpl-tick-factor=10000 -fexpose-all-unfoldings -funfolding-creation-threshold=10000 -funfolding-keeness-factor=100" 2>&1 | tee  ~/experimental/analysis/WithGhc76/perfAllUnfoldingsVeryKeen.log
+make clean && make boot && make EXTRA_HC_OPTS="-O -fsimpl-tick-factor=10000 -fexpose-all-unfoldings -funfolding-creation-threshold=10000 -funfolding-keeness-factor=100 -funfolding-use-threshold=1000" 2>&1 | tee  ~/experimental/analysis/WithGhc76/perfAllUnfoldingsCompletelyKeen.log
