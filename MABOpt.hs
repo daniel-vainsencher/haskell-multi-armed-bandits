@@ -98,7 +98,7 @@ playTapeWithStrictness guts dflags measure tape = do
                            ", tape: " ++ (stringFromTape $ justActions tape) ++
                            if needMoreTape then "..." else "X" -}
        let size = sizeGuts resGuts
-	   counts = plusSimplCount count1 count2
+           counts = plusSimplCount count1 count2
            completeSFeedback = completeFeedback "" counts size feedback
        return $! snd $ adaptCompleteFeedback measure completeSFeedback
 
@@ -193,7 +193,7 @@ tapeResults guts dflags tape
 
 adaptCompleteFeedback :: CountMeasure -> SimplifierFeedback -> (String, BanditFeedback Bool)
 adaptCompleteFeedback cm@(CountMeasure f) 
-		      CompleteSFeedback 
+                      CompleteSFeedback
 			   { sfbSubproblemFeedbacks = sf
 			   , sfbSimplCounts = cnt 
 			   , sfbExprSize = exprSize
@@ -213,22 +213,27 @@ adaptCompleteFeedback cm@(CountMeasure f)
 	(node, actions) = maybe (currentNode, []) (\pr -> adaptClosedFeedback cm pr currentNode []) previous
     in (name, node)
 
-adaptClosedFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool -> [Bool] -> (BanditFeedback Bool, [Bool])
+adaptClosedFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool 
+                    -> [Bool] -> (BanditFeedback Bool, [Bool])
 adaptClosedFeedback cm sfb next actionSuffix
   = let action = sfbActionTaken sfb 
         currentNode = BanditSubFeedback 
-	   { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) (sfbSubproblemFeedbacks sfb)
-	   , fbActionTaken = action
-	   , fbNext = next}
-	actions = action : actionSuffix
-    in maybe (currentNode, actions) (\pr -> adaptClosedFeedback cm pr currentNode actions) $ sfbPrevious sfb
+           { fbSubproblemFeedbacks = map (adaptCompleteFeedback cm) 
+                                         (sfbSubproblemFeedbacks sfb)
+           , fbActionTaken = action
+           , fbNext = next}
+        actions = action : actionSuffix
+    in maybe (currentNode, actions) 
+             (\pr -> adaptClosedFeedback cm pr currentNode actions) 
+             $ sfbPrevious sfb
 
 strFromGuts :: DynFlags -> ModGuts -> String
 strFromGuts flags g = showSDoc flags $ ppr $ mg_binds g
 
 simplifyWithTapes
   :: MonadUtils.MonadIO m =>
-     ModGuts -> DynFlags -> [MTape] -> m ((ModGuts, [SimplifierFeedback]), SimplCount)
+     ModGuts -> DynFlags -> [MTape] 
+     -> m ((ModGuts, [SimplifierFeedback]), SimplCount)
 simplifyWithTapes guts dflags tapes = do
         us <- liftIO $ mkSplitUniqSupply 's'
         hsc_env <- liftIO $ newHscEnv dflags

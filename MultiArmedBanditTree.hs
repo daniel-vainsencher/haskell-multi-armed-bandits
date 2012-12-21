@@ -55,7 +55,7 @@ data UCBBandits a = Bandits [(Stats, a)] deriving Show
 
 
 -----------------------  Generic code ---------------------------
--- | Each bandit in a tree also keeps a list of nodes for visited reachable ids, and a list of ids to be visited. Note that here the Stats of a node include also visits to its children. 
+-- | Each bandit in a tree also keeps a list of nodes for visited reachable ids, and a list of ids to be visited. Note that here the Stats of a node include also visits to its children.
 data BanditTree a
   = BanditNode { bnStats :: Stats             -- Score at his node
                , bnOwnPayoff :: Float
@@ -123,7 +123,7 @@ bestNode bp@(BanditProblem {bpIsDeterministic = isDet})
 bestActionSpec :: BanditProblem m a -> Int -> BanditTree a -> (Float, ActionSpec a)
 bestActionSpec bp depth t@BanditNode { bnId = id
 				     , bnSubtrees = subtrees
-				     , bnSons = [] }
+                                     , bnSons = [] }
  = let (subPayoffs, subSpecs) = unzip $ map (bestActionSpec bp 0 . bbtNode) subtrees 
    in (bnOwnPayoff t + sum subPayoffs
       , ActionSpec { asAction = Nothing
@@ -131,7 +131,7 @@ bestActionSpec bp depth t@BanditNode { bnId = id
 		   , asSubproblems = subSpecs })
 
 bestActionSpec bp@(BanditProblem {bpIsDeterministic = isDet})
-	       depth 
+	       depth
 	       t@BanditNode { bnSubtrees = subtrees
 			    , bnSons = sons }
  = let (subPayoffs, subSpecs) = unzip $ map (bestActionSpec bp 0 . bbtNode) subtrees
@@ -145,7 +145,7 @@ bestActionSpec bp@(BanditProblem {bpIsDeterministic = isDet})
    in if bnOwnPayoff t > bestSonPayoff 
 	 then ( ownOptPayoff, ActionSeqEnd) 
 			      --ActionSpec {asAction = Nothing, asNext = ActionSeqEnd, asSubproblems = subSpecs})
-	 else let act = Just $ head $ drop depth $ bnId bestSon
+         else let act = Just $ head $ drop depth $ bnId bestSon
 	      in  ( subProblemPayoffs + bestSonPayoff
 	          , ActionSpec { asAction = act
 			       , asNext = bestSonSpec
@@ -176,7 +176,8 @@ maximalAndRestBy f (x:x':xs) =
          False -> (largestInSuffix, x:restFromSuffix)
 
 
--- |Choose an arm that maximizes ucbBeta (appropriate to play according to the UCB algorithm)
+-- |Choose an arm that maximizes ucbBeta (appropriate to
+-- |play according to the UCB algorithm).
 chosenAndRest bandits toStats beta scale =
           let maxVariance = maximum $ map (variance . toStats) bandits
 	      arms = toInteger $ length bandits
@@ -184,18 +185,6 @@ chosenAndRest bandits toStats beta scale =
               maxUCB = maximum $ map currUCB bandits
           in maximalAndRestBy currUCB bandits
 
-{-
--- |Play the UCB algorithm with a given history and problem, returning the updated history.
-play :: Monad m => UCBBandits a -> BanditProblem m a -> Float -> m (UCBBandits a)
-play (Bandits bandits) problem beta =
-     let
-          BanditProblem {bpPlayAction = playAction} = problem
-          ((chosenStats, chosenIdentity), otherArms) = chosenAndRest bandits (\(s,i) -> s) beta 1
-     in do
-          (newScore, _) <- playAction chosenIdentity -- UCB does not deal with recursive structure.
-          let updatedArm = (chosenStats `withEntry` newScore, chosenIdentity)
-          return (Bandits (updatedArm : otherArms))
--}
 initTree :: (MonadIO m, Show a) => BanditProblem m a -> m (ActionSpec a, Float, BudgetedBanditTree a)
 initTree (BanditProblem playAction rootId _) -- initDecisionBudget
   = do liftIO $ putStrLn $ " Init to use the ActionSpec: " ++ show rootId 
@@ -250,8 +239,8 @@ chooseActions bp decisionBudget (BanditNode { bnStats = stats
                                             , bnSons = sons
 					    , bnUCBDecisions = ucbDec
                                             , bnUnvisitedSons = unvisited
-                                            , bnSubtrees = subtrees}) 
-              beta scale depth 
+                                            , bnSubtrees = subtrees})
+              beta scale depth
   | not (null sons)   -- We need at least one son
   = let uStats = (if decisionBudget <= ucbDec
                    then (withEntry emptyStats) . fromIntegral . mvN -- past budget use most visited
@@ -267,14 +256,14 @@ chooseActions bp decisionBudget (BanditNode { bnStats = stats
     
 
 -- No sons, visited or otherwise: must play self.
-chooseActions bp@ (BanditProblem playAction _ isDet) 
-              decisionBudget 
+chooseActions bp@ (BanditProblem playAction _ isDet)
+              decisionBudget
               (BanditNode { bnStats = stats
                           , bnOwnPayoff = ownPayoff
                           , bnId = id
                           , bnSons = []
                           , bnUnvisitedSons = []
-                          , bnSubtrees = subtrees}) 
+                          , bnSubtrees = subtrees})
               beta scale depth
   = ActionSpec { asAction = Nothing 
 	       , asNext = ActionSeqEnd
@@ -345,7 +334,7 @@ updateTree2 old@BanditNode {bnUnvisitedSons = ua:uas} bsf@BanditSubFeedback {fbA
 	freshSon = (nodeMaker bf) { bnId = bnId old ++ [fbActionTaken bsf] }
 	newNode = old { bnStats = (bnStats old) `withEntry` po
 		      , bnSons = freshSon : bnSons old
-		      , bnSubtrees = updateTrees (bnSubtrees old) 
+		      , bnSubtrees = updateTrees (bnSubtrees old)
 						 $ fbSubproblemFeedbacks bsf
 		      , bnUCBDecisions = bnUCBDecisions old + 1
 		      , bnUnvisitedSons = uas}
@@ -412,10 +401,10 @@ twinPeaks = BanditProblem { bpPlayAction = twinHelper
                           , bpIsDeterministic = False}
 
 twinHelper :: ActionSpec Float -> IO (BanditFeedback Float)
-twinHelper (ActionSpec {asAction = Just x})
+twinHelper (ActionSpec { asAction = Just x})
            = do let payoff = - (min (abs (x+1)) (abs (x-1)))
                 actions <- randomList x
-                return $ BanditFeedback { fbPayoff = payoff 
+                return $ BanditFeedback { fbPayoff = payoff
 					, fbInclusivePayoff = payoff 
                                         , fbActions = map (\x -> [x]) actions 
                                         , fbSubproblemFeedbacks = [] }
@@ -424,8 +413,8 @@ randomList x = mapM randomRIO $ replicate 5 (x-0.1,x+0.1)
 
 -- problem = twinPeaks
 
-{-simulationStep :: (Int, BanditTree a, BanditProblem m a, Integer, Float, Float, Float) 
-		  -> Maybe ((ActionSpec a, Float, BanditTree a), 
+{-simulationStep :: (Int, BanditTree a, BanditProblem m a, Integer, Float, Float, Float)
+		  -> Maybe ((ActionSpec a, Float, BanditTree a),
 			    (Int, BanditTree a, BanditProblem m a, Integer, Float, Float, Float)) -}
 simulationStep (i, _, _, _)  | i == 0 = return Nothing
 simulationStep quad =
@@ -437,10 +426,10 @@ simulationStep quad =
 -- Ended up equivalent to unfoldrM from Control.Monad.Loops in monad-loops, but that's not standard issue.
 --unfoldrMine      :: (MonadIO m, Show tb, Show ta) => (tb -> m (Maybe (ta, tb))) -> tb -> m [ta]
 unfoldrMine f b  = do
-  x <- f b 
+  x <- f b
   case x of
    Just (a,new_b) -> do rest <- unfoldrMine f new_b -- liftIO $ putStrLn $ show a
-			return $ a : rest
+                        return $ a : rest
    Nothing        -> return []
 
 -- runWithHistory :: MonadIO m => Float -> Float -> BanditProblem m a -> Integer -> BanditTree a -> m ([(ActionSpec a, Float, BanditTree a)])
