@@ -3,8 +3,6 @@
 *.hs~
 *.dyn_o
 *.dyn_hi
-dist
-cabal-dev
 *.chi
 *.chs.h
-
+dist
