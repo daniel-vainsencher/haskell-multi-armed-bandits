@@ -1,0 +1,6 @@
+
+* Currently, the plugin doesn't work because the ids associated with subproblems become inconsistent. Some ideas for debugging the current situation:
+- Add the sanity information also to ActionSpec, test sanity when handing out subtapes.
+- Print out the core right before and after we get the feedback: those names should appear.
+- Add SCC (or other) ticks everywhere, with the the name of the id?
+- Trace out the workings of the algorithm with isolation completely for a small program, with one simplification stage, with no cross module unfoldings. See what are the subproblems, feedbacks, action specs.
