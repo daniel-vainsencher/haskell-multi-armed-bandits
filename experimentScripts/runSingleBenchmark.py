@@ -14,7 +14,7 @@ logsLocation = argv[4]
 verbosity = argv[5]
 
 # Common settings
-settings = ["-ticky", "-ddump-simpl", "-ddump-stg", "-fexpose-all-unfoldings", "-dcore-lint"] #, "-dverbose-core2core"]
+settings = ["-ticky", "-ddump-simpl", "-ddump-stg", "-fexpose-all-unfoldings", "-dcore-lint", "-fsimpl-tick-factor=10000", "-funfolding-creation-threshold=10000"] #, "-dverbose-core2core"]
 
 if mode == "plain":
     modeName="Plain"
