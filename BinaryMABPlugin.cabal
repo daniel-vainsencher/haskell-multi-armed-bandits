@@ -3,9 +3,9 @@ version:                0.1
 build-type:             Simple
 cabal-version:          >= 1.2
 
-License:                2 clause BSD
-License file:           LICENSE
-Author:                 Daniel Vainsencher & Simon Peyton-Jones
+license:                MIT
+License-file:           LICENSE
+Author:                 Daniel Vainsencher
 Maintainer:             Daniel Vainsencher <danielv@tx.technion.ac.il>
 
 library
