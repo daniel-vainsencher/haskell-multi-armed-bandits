@@ -4,7 +4,7 @@ import os
 from sys import argv
 from string import join, split,strip
 
-expDirName = "19thOvernight"
+expDirName = argv[1]
 home = "/home/t-davain/"
 noftop = "/5playpen/t-davain/shadows/from-horse-ghc/nofib/"
 analyzerLocation = noftop + "nofib-analyse/nofib-analyse"
@@ -23,15 +23,15 @@ def modeName(mode):
 
 for mode in modes:
     logFileName = "log"+modeName(mode)
-    catCommand = "cat "+ logFileName + " >> ../" + logFileName
-    for line in open(home+"experimental/code/toRun"):
+
+    for line in open("./toRun"):
         print "Going to process" + mode + line
         parts = split(strip(line),'/')
         name = parts.pop()
         targetDir = targetRoot + name + "/"
         under = join(parts,'/')
         if os.access(targetDir,os.F_OK):
-            os.chdir(targetDir)
+            catCommand = "cat "+ targetDir + "/" + logFileName + " >> " + targetRoot + "/" + logFileName
             sp.call(catCommand, shell=True)
 
 
