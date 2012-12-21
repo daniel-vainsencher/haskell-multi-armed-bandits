@@ -69,7 +69,8 @@ data BudgetedBanditTree a
   = BudgetedBanditTree { bbtPlayBudget :: Integer
 		       , bbtNode :: BanditTree a 
 		       , bbtMin :: Float
-		       , bbtMax :: Float} deriving Show
+                       , bbtMax :: Float
+                       , bbtName :: String} deriving Show
 
 instance Show a => Show (BanditTree a) where
   show bt = show $ prettyBanditTree bt
@@ -78,9 +79,9 @@ data BanditFeedback a
      = BanditFeedback { fbPayoff :: !Float
                       , fbInclusivePayoff :: !Float
                       , fbActions :: [[a]]
-                      , fbSubproblemFeedbacks :: [BanditFeedback a]}
+                      , fbSubproblemFeedbacks :: [(String, BanditFeedback a)]}
        | BanditSubFeedback { fbActionTaken :: !a
-                           , fbSubproblemFeedbacks :: [BanditFeedback a]
+                           , fbSubproblemFeedbacks :: [(String, BanditFeedback a)]
                            , fbNext :: BanditFeedback a}
        deriving Show
 
@@ -210,7 +211,7 @@ initTree (BanditProblem playAction rootId _) -- initDecisionBudget
 				       , bnOwnPayoff = score
 				       , bnId = justActions rootId
 				       , bnUCBDecisions = 0
-				       , bnSubtrees = map treeMaker subfbs
+                                       , bnSubtrees = map (\(n, s) -> treeMaker n s) subfbs
 				       , bnSons = []
 				       , bnUnvisitedSons = actions}
                  return (rootId, score
@@ -218,7 +219,8 @@ initTree (BanditProblem playAction rootId _) -- initDecisionBudget
 			    { bbtPlayBudget = 4 -- Corresponds to greedy mode
 			    , bbtNode = node
 			    , bbtMin = score
-			    , bbtMax = score})
+                            , bbtMax = score
+                            , bbtName = "Root gets no Name"})
 
 data ActionNovelty = NewAction | SonFreeVisited Integer Float deriving Show
 
@@ -295,32 +297,36 @@ updateTree bbt bf
 	       , bbtMax = max payoff $ bbtMax bbt })
 
 
-updateTrees :: (Show a, Eq a) => [BudgetedBanditTree a] -> [BanditFeedback a] -> [BudgetedBanditTree a]
-updateTrees bts bfs 
-  = if length bts /= length bfs 
-       then error $ "Subproblem list length inconsistent between tree:\n" ++ show bts ++ "\nand feedback:\n" ++ show bfs
-       else let (_, trees) = unzip [updateTree t fb | (t, fb) <- zip bts bfs]
-	    in trees
+updateTrees :: (Show a, Eq a) => [BudgetedBanditTree a] -> [(String, BanditFeedback a)] -> [BudgetedBanditTree a]
+updateTrees bts nbfs
+  = let treeNames = map bbtName bts
+        feedbackNames = map fst nbfs
+    in if treeNames /= feedbackNames
+         then error $ "Subproblem list inconsistent between trees:\n" ++ show treeNames
+                      ++ "\nand feedback:\n" ++ show feedbackNames
+         else let (_, trees) = unzip [updateTree t (snd nfb) | (t, nfb) <- zip bts nbfs]
+              in trees
 
 
 nodeMaker bf@BanditFeedback {}
 	     = BanditNode { bnStats = singletonStat $ fbInclusivePayoff bf
 			  , bnOwnPayoff = fbPayoff bf
 			  , bnId = []
-			  , bnSubtrees = map treeMaker 
+                          , bnSubtrees = map (\ (n,s) -> treeMaker n s)
 					     $ fbSubproblemFeedbacks bf
 			  , bnUCBDecisions = 0
 			  , bnSons = []
 			  , bnUnvisitedSons = fbActions bf} 
 nodeMaker _ = error "A fresh node is only created with unvisitedSons."
 
-treeMaker bf@BanditFeedback {}
+treeMaker name bf@BanditFeedback {}
   = let node = nodeMaker bf
     in BudgetedBanditTree { bbtNode = node
 			  , bbtPlayBudget = 4
 			  , bbtMin = fbInclusivePayoff bf
-			  , bbtMax = fbInclusivePayoff bf}
-treeMaker _ = error "Trying to create a new tree with BanditSubFeedback"
+                          , bbtMax = fbInclusivePayoff bf
+                          , bbtName = name}
+treeMaker _ _ = error "Trying to create a new tree with BanditSubFeedback"
 
 updateTree2 :: (Show a, Eq a) => BanditTree a -> BanditFeedback a -> Integer -> Int -> (Float, Bool, BanditTree a)
 -- If the BF carries a payoff, action occured in current existing BT node. Cannot be that we have sons (visited or otherwise), or feedback would be in one of them.

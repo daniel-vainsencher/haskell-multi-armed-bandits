@@ -99,8 +99,8 @@ playTapeWithStrictness guts dflags measure tape = do
                            if needMoreTape then "..." else "X" -}
        let size = sizeGuts resGuts
 	   counts = plusSimplCount count1 count2
-	   completeSFeedback = completeFeedback counts size feedback
-       return $ adaptCompleteFeedback measure completeSFeedback 
+           completeSFeedback = completeFeedback "" counts size feedback
+       return $! snd $ adaptCompleteFeedback measure completeSFeedback
 
 
 -- playTape :: ModGuts -> DynFlags -> (Tick->Int) -> [SearchTapeElement] -> IO (Float, [[SearchTapeElement]])
@@ -120,8 +120,8 @@ playTape guts dflags measure tape = do
                            if needMoreTape then "..." else "X" -}
 
        let size = sizeGuts resGuts
-	   completeSFeedback = completeFeedback count size feedback
-       return $ adaptCompleteFeedback measure completeSFeedback 
+           completeSFeedback = completeFeedback "" count size feedback
+       return $! snd $ adaptCompleteFeedback measure completeSFeedback
 
 main = work 1000 100
 
@@ -191,14 +191,15 @@ tapeResults guts dflags tape
        return (guts, counts, head feedbacks)
 
 
-adaptCompleteFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool
+adaptCompleteFeedback :: CountMeasure -> SimplifierFeedback -> (String, BanditFeedback Bool)
 adaptCompleteFeedback cm@(CountMeasure f) 
 		      CompleteSFeedback 
 			   { sfbSubproblemFeedbacks = sf
 			   , sfbSimplCounts = cnt 
 			   , sfbExprSize = exprSize
 			   , sfbMoreActions = moreNeeded
-			   , sfbPrevious = previous}
+                           , sfbPrevious = previous
+                           , sfbMarker = name}
   = let exclusiveExprSize = exprSize - (sum $ map sfbExprSize sf)
 	scorer = computeScore f
 	exclusiveCountScore = scorer cnt - (sum $ map (scorer . sfbSimplCounts) sf)
@@ -210,7 +211,7 @@ adaptCompleteFeedback cm@(CountMeasure f)
 						      else []}
 	newActions = [actions ++ [True],actions ++ [False]]
 	(node, actions) = maybe (currentNode, []) (\pr -> adaptClosedFeedback cm pr currentNode []) previous
-    in node
+    in (name, node)
 
 adaptClosedFeedback :: CountMeasure -> SimplifierFeedback -> BanditFeedback Bool -> [Bool] -> (BanditFeedback Bool, [Bool])
 adaptClosedFeedback cm sfb next actionSuffix
@@ -234,7 +235,7 @@ simplifyWithTapes guts dflags tapes = do
         let home_pkg_rules = hptRules hsc_env (dep_mods (mg_deps guts))
         let hpt_rule_base  = mkRuleBase home_pkg_rules
 
-        liftIO $ runCoreM hsc_env hpt_rule_base us (mg_module guts) $ do
+        liftIO $! runCoreM hsc_env hpt_rule_base us (mg_module guts) $ do
            simplifyPgm (todo tapes) guts
 
 example :: IO (ModGuts, DynFlags)
