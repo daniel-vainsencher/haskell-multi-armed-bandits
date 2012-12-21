@@ -5,7 +5,7 @@ cabal-version:          >= 1.2
 
 license:                MIT
 License-file:           LICENSE
-Author:                 Daniel Vainsencher
+Author:                 Daniel Vainsencher and Simon Peyton-Jones
 Maintainer:             Daniel Vainsencher <danielv@tx.technion.ac.il>
 
 library
